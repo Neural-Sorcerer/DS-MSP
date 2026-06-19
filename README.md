@@ -25,11 +25,17 @@ This repository provides a robust, OpenCV-compatible wrapper for the **Double Sp
 Fisheye lenses capture a very wide field of view (often > 180°), much like a human eye or a security camera. Standard "pinhole" camera models assume straight lines stay straight, which fails for these curved lenses.
 
 The **Double Sphere** model is a mathematical way to accurately describe how these lenses bend light. This codebase provides:
--   **Core Package**: `ds_msp/` (Clean, modular Python package)
--   **Calibration**: `calibrate.py` (Robust estimation from checkerboards)
--   **Validation**: `validate.py` (Visual verification and metrics)
--   **Analysis**: `visualize.py` (FOV zones, coverage, and undistortion demos)
--   **Verification**: `tests/` (Unit tests and geometric verification)
+-   **Core model**: `ds_msp/model.py` — `DoubleSphereCamera` + stateless `ds_project` / `ds_unproject` / `ds_project_jacobian`.
+-   **OpenCV-style wrapper**: `ds_msp/cv.py` — drop-in functions mirroring `cv2.fisheye` (`projectPoints`, `undistortImage`, `solvePnP`, …).
+-   **Hardware LDC export**: `ds_msp/ldc.py` — TI Jacinto J7/TDA4 displacement-mesh LUT generator.
+-   **Calibration**: `calibrate.py` (Levenberg–Marquardt with **analytic Jacobians**).
+-   **Validation**: `validate.py` (Visual verification and metrics).
+-   **Verification**: `tests/` and `verify_real_samples.py` (unit + real-image end-to-end checks).
+
+> **Correctness note.** The projection validity test is the Double Sphere
+> half-space condition `z > -w2·d1` (Usenko et al. 2018, Eq. 43–45), so the model
+> correctly handles the full **> 180° FOV** — not the naive `z > 0` check, which
+> would silently clip the field of view below 180°. See [§7.2](#72-projection-validity-the-correct-condition).
 
 ---
 
@@ -104,18 +110,29 @@ python calibrate.py
 
 **What happens inside:**
 1.  Loads 2D keypoints and generates corresponding 3D world points for the checkerboard.
-2.  Initializes camera parameters (focal length, principal point, $\xi$, $\alpha$).
-3.  Runs **Levenberg-Marquardt optimization** to minimize reprojection error.
+2.  Initializes intrinsics (focal length, principal point) and seeds each image's
+    pose with a **PnP** solve on the unprojected rays ($\xi_0 = 0.5$, $\alpha_0 = 0.5$).
+3.  Runs **Levenberg–Marquardt** (`scipy.least_squares`, TRF) with an **analytic
+    Jacobian** (`ds_project_jacobian`) to minimize reprojection error. The exact
+    Jacobian replaces finite differencing — on the bundled dataset this is ~**170×
+    faster** while reaching the identical solution.
 4.  Saves the optimized parameters to `results/`.
+
+> **Parameter domain (important).** The optimizer constrains the distortion
+> parameters to the *well-posed* Double Sphere range: $\alpha \in [0, 1]$ and
+> $\xi \in [-1, 1]$ (matching the basalt/Kalibr reference). Outside this range the
+> model becomes non-injective (projection "folds back", so unprojection can no
+> longer invert it) — real fisheye lenses sit roughly in $\xi \in [-0.2, 0.6]$.
 
 ### Step 3: Check Results
 Look at the output in your terminal:
 ```text
 [REAL] Optimization success: True
-[REAL] Final cost: 12.34
-[REAL] RMS reprojection error: 0.4512 px
+[REAL] Final cost: 1362.23
+[REAL] RMS reprojection error: 0.6367 px
 ```
-An RMS error < 1.0 pixel is generally considered good.
+An RMS error < 1.0 pixel is generally considered good. On the bundled data the
+calibration converges to `fx≈711.6, fy≈711.2, cx≈949.2, cy≈518.8, xi≈0.183, alpha≈0.809`.
 
 ---
 
@@ -141,33 +158,57 @@ Go to `results/visualizations/` and open the generated images (e.g., `reproj_000
 
 ## 6. Tutorial 3: Core API Usage
 
-This section explains how to use `ds_camera.py` and `ds_camera_cv.py` in your own code.
+This section explains how to use `ds_msp/model.py` and `ds_msp/cv.py` in your own code.
 
-### 6.1. Loading the Camera
+### 6.1. Creating the Camera
+The model needs **only the 6 intrinsics** for projection / unprojection / PnP.
+`width` and `height` are optional — they are required *only* by the image-level
+helpers (`compute_K_new`, `get_undistortion_maps`), which raise a clear error if
+you call them without dimensions.
+
 ```python
-from ds_msp.model import DoubleSphereCamera
+from ds_msp import DoubleSphereCamera
 import numpy as np
 
-# Load from the calibration result
+# (a) Math-only: no meaningless image dimensions required
+cam = DoubleSphereCamera(fx=711.57, fy=711.24, cx=949.18, cy=518.81, xi=0.183, alpha=0.809)
+
+# (b) With dimensions, for image undistortion
+cam = DoubleSphereCamera(711.57, 711.24, 949.18, 518.81, 0.183, 0.809, width=1920, height=1080)
+
+# (c) From a calibration result
 cam = DoubleSphereCamera.from_json('results/calibration_params.json')
 
-print(f"Intrinsics: fx={cam.fx}, fy={cam.fy}")
-print(f"Distortion: xi={cam.xi}, alpha={cam.alpha}")
+print(cam)                 # readable repr
+K, D = cam.K, cam.D        # 3x3 intrinsic matrix and [xi, alpha] as properties
 ```
 
+> `alpha` is validated to be in `[0, 1]` at construction. For the well-posed
+> domain keep `xi` in `[-1, 1]` (see [§4](#4-tutorial-1-calibration)).
+
 ### 6.2. Project and Unproject
--   **Project (3D -> 2D)**: Where does a 3D point appear on the image?
--   **Unproject (2D -> 3D)**: What ray direction corresponds to a pixel?
+-   **Project (3D → 2D)**: Where does a 3D point appear on the image? (returns a
+    `valid` mask using the correct half-space condition — see [§7.2](#72-projection-validity-the-correct-condition).)
+-   **Unproject (2D → 3D)**: What unit ray corresponds to a pixel?
 
 ```python
-# 3D points in camera frame (N, 3)
-points_3d = np.array([[0, 0, 1], [1, 1, 2]], dtype=np.float32)
+points_3d = np.array([[0, 0, 1], [1, 1, 2]], dtype=np.float64)  # camera frame (N, 3)
 
-# Project to pixels
-points_2d, valid = cam.project(points_3d)
+points_2d, valid = cam.project(points_3d)     # (N, 2) pixels + (N,) validity
+rays, valid = cam.unproject(points_2d)        # (N, 3) unit rays + (N,) validity
+```
 
-# Unproject back to unit rays
-rays, valid = cam.unproject(points_2d)
+For hot loops (e.g. calibration) the same math is available as allocation-free
+standalone functions, plus the **analytic Jacobian**:
+
+```python
+from ds_msp import ds_project, ds_unproject
+from ds_msp.model import ds_project_jacobian
+
+u, v, valid = ds_project(points_3d, cam.fx, cam.fy, cam.cx, cam.cy, cam.xi, cam.alpha)
+
+# Exact derivatives: J_point = d(u,v)/d(x,y,z),  J_intr = d(u,v)/d(fx,fy,cx,cy,xi,alpha)
+u, v, J_point, J_intr, valid = ds_project_jacobian(points_3d, cam.fx, cam.fy, cam.cx, cam.cy, cam.xi, cam.alpha)
 ```
 
 ### 6.3. Undistorting Images (OpenCV Style)
@@ -178,38 +219,58 @@ import ds_msp.cv as ds_cv
 import cv2
 
 img = cv2.imread('assets/test_image.jpg')
-K = np.array([[cam.fx, 0, cam.cx], [0, cam.fy, cam.cy], [0, 0, 1]])
-D = np.array([cam.xi, cam.alpha])
+K, D = cam.K, cam.D
 
 # 1. Estimate new camera matrix (controls zoom/crop)
-# balance=0.0 (Keep all pixels), balance=1.0 (Optimal crop)
-K_new = ds_cv.estimateNewCameraMatrixForUndistortRectify(
-    K, D, (1920, 1080), np.eye(3), balance=1.0
-)
+#    balance=0.0 -> widest FOV (0.4x focal, more scene, black borders)
+#    balance=1.0 -> tightest crop (0.8x focal, less FOV, fewer borders)
+K_new = ds_cv.estimateNewCameraMatrixForUndistortRectify(K, D, (1920, 1080), balance=0.0)
 
 # 2. Undistort
-img_undist = ds_cv.undistortImage(img, K, D, K_new)
+img_undist = ds_cv.undistortImage(img, K, D, Knew=K_new)
 cv2.imwrite('undistorted.jpg', img_undist)
 ```
 
+The object API is equivalent: `img_undist, K_new = cam.undistort_image(img)`.
+
 ### 6.4. Robust PnP (Pose Estimation)
-Standard PnP solvers often fail with fisheye lenses. Our wrapper handles this automatically.
+Standard PnP solvers assume a pinhole model and fail on raw fisheye points. The
+DS solver unprojects to rays first, keeps the front-facing valid rays
+(`z > 0`, the only ones a normalized-plane PnP can represent), then solves.
 
 ```python
-# points_3d: (N, 3) object points
-# points_2d: (N, 2) image points
-success, rvec, tvec = ds_cv.solvePnP(points_3d, points_2d, K, D)
+# Object API (recommended): points_3d (N,3), points_2d (N,2) distorted pixels
+success, rvec, tvec = cam.solve_pnp(points_3d, points_2d)
 
-if success:
-    print("Rotation Vector:\n", rvec)
-    print("Translation Vector:\n", tvec)
+# OpenCV-style equivalent
+success, rvec, tvec = ds_cv.solvePnP(points_3d, points_2d, cam.K, cam.D)
 ```
+
+### 6.5. Hardware LDC Export (TI Jacinto J7 / TDA4)
+Generate a downsampled displacement-mesh LUT for the on-chip Lens Distortion
+Correction engine, plus the matching pinhole intrinsics:
+
+```python
+from ds_msp.ldc import TI_LDC_MeshGenerator
+
+gen = TI_LDC_MeshGenerator(cam)                       # cam built with width/height
+res = gen.generate_mesh_and_intrinsics(1920, 1080, downsample_factor=4, balance=0.5)
+mesh_lut = res["mesh_lut"]     # int16, Q3 (1/8 px) displacements for the hardware
+K_new    = res["K_new"]        # pinhole intrinsics of the rectified image
+```
+
+> **Best practice for keypoints on an LDC-undistorted image:** use the **LDC image**
+> for the picture, but undistort *keypoints* with `cam.undistort_points(pts, K_new)`
+> (closed-form) at the **same `balance`**. The mesh-based point inverse
+> (`TI_LDC_PointUndistorter`) is exact at the center but diverges toward the
+> periphery (its fixed-point iteration is not contractive there). Because the same
+> `K_new` is shared, the analytic points and the LDC image stay consistent to ~0.1 px.
 
 ---
 
 ## 7. Technical Deep Dive: FOV & Undistortion
 
-**Generated by:** `analyze_fov_limit.py`, `visualize_fov_zones.py`
+**Generated by:** `visualize.py`
 
 A common question is: *"Why are pixels missing from my undistorted image, even when I try to keep the whole image?"*
 
@@ -231,14 +292,31 @@ We verified the wrapper on real data (`assets/test_image.jpg` and `assets/test_i
 2.  **Whole (`balance=0.0`)**: Keeps all pixels that map to the image plane. Introduces black borders.
 3.  **Zoom (Reduced Focal Length)**: Captures even more of the wide-angle content, but shrinks the center.
 
-### 7.2. The "Cone of Invalidity" (Mathematical Explanation)
-The Double Sphere model defines a projection function $\pi(\mathbf{x})$. However, this function is not valid for all 3D points. There exists a specific region where the projection fails, known as the "Cone of Invalidity".
+### 7.2. Projection Validity (The Correct Condition)
+The Double Sphere model defines a projection function $\pi(\mathbf{x})$ that is **not**
+valid for all 3D points. The exact projectability test (Usenko et al. 2018, Eq. 43–45) is the
+half-space condition implemented in `ds_project`:
 
-**The Condition:**
-The projection is valid only if:
-$$den = \alpha \sqrt{x^2 + y^2 + (z + \xi \sqrt{x^2 + y^2 + z^2})^2} + (1-\alpha)(z + \xi \sqrt{x^2 + y^2 + z^2}) > 0$$
+$$z > -w_2 \, d_1, \qquad d_1 = \sqrt{x^2 + y^2 + z^2}$$
 
-Geometrically, this inequality defines a **cone-shaped volume** behind the camera center. Points inside this cone cannot be projected onto the image plane.
+$$w_1 = \begin{cases} \dfrac{\alpha}{1-\alpha} & \alpha \le 0.5 \\[1.1em] \dfrac{1-\alpha}{\alpha} & \alpha > 0.5 \end{cases} \qquad w_2 = \frac{w_1 + \xi}{\sqrt{2 w_1 \xi + \xi^2 + 1}}$$
+
+This admits points with **$z \le 0$** (rays beyond $90°$), which is exactly why the model
+supports a $> 180°$ field of view. A naive `z > 0` test — a common implementation mistake —
+would reject those rays and silently cap the FOV below $180°$; this library does **not**
+make that mistake.
+
+**Forward / inverse equations** (for reference):
+
+$$d_2 = \sqrt{x^2 + y^2 + (\xi d_1 + z)^2}, \quad
+\begin{bmatrix} u \\ v \end{bmatrix} =
+\begin{bmatrix} f_x \, x / (\alpha d_2 + (1-\alpha)(\xi d_1 + z)) + c_x \\
+f_y \, y / (\alpha d_2 + (1-\alpha)(\xi d_1 + z)) + c_y \end{bmatrix}$$
+
+Unprojection is closed-form; with $m_x=(u-c_x)/f_x$, $m_y=(v-c_y)/f_y$, $r^2=m_x^2+m_y^2$ it is
+valid for all $r^2$ when $\alpha \le 0.5$, and for $r^2 \le 1/(2\alpha-1)$ when $\alpha > 0.5$.
+
+**Valid parameter domain:** $\alpha \in [0, 1]$, $\xi \in [-1, 1]$.
 
 ### 7.3. Visualization (Augmented FOV Zones)
 We generated an augmented visualization that overlays the **FOV Zones** directly onto the real image (Sample 96).
@@ -284,6 +362,23 @@ We reconstructed the absolute 3D positions of the checkerboard corners from the 
 
 **Conclusion:** The undistorted images produced by this wrapper are **geometrically accurate pinhole projections** suitable for precise 3D computer vision tasks.
 
+### 8.3. End-to-End Check on Real Images
+`verify_real_samples.py` runs every code path on the real images with the
+calibrated parameters and writes labeled visuals to `verification_output/`:
+
+```bash
+python verify_real_samples.py
+```
+
+| Check (real data) | `test_image` | `test_image_96` |
+| :--- | :---: | :---: |
+| PnP + reprojection RMS | **0.43 px** | **0.85 px** |
+| Undistort: object API vs `cv.py` wrapper | identical | identical |
+| Keypoint undistort: DS-analytic vs LDC mesh | 0.11 px | 9.96 px* |
+
+\*The larger gap on `test_image_96` is the expected peripheral divergence of the
+LDC fixed-point point-inverter (board near the image edge) — see the LDC best-practice note in [§6.5](#65-hardware-ldc-export-ti-jacinto-j7--tda4).
+
 ---
 
 ## 9. FAQ
@@ -292,10 +387,16 @@ We reconstructed the absolute 3D positions of the checkerboard corners from the 
 **A:** This is normal for fisheye undistortion. The "pinhole" view cannot capture the full >180° FOV. You can adjust the `balance` parameter in `estimateNewCameraMatrixForUndistortRectify` to zoom in (crop borders) or zoom out (keep more content but more borders).
 
 ### Q: PnP fails or gives bad results?
-**A:** Ensure you are using `ds_camera_cv.solvePnP`. Standard `cv2.solvePnP` assumes a pinhole model and will fail on raw fisheye images. Also, check that your 3D points are defined correctly (z=0 for planar targets).
+**A:** Use `cam.solve_pnp(...)` (or `ds_msp.cv.solvePnP`). Standard `cv2.solvePnP` assumes a pinhole model and will fail on raw fisheye images. Also check that your 3D points are defined correctly (z=0 for planar targets). Note that PnP needs at least 4 points in front of the camera ($z > 0$ after unprojection).
+
+### Q: What ranges are valid for `xi` and `alpha`?
+**A:** `alpha ∈ [0, 1]` (enforced at construction) and `xi ∈ [-1, 1]`. Values of `xi > 1` push the model into a non-injective regime where unprojection can no longer invert projection; the calibrator constrains to this domain automatically. Real fisheye lenses typically land in `xi ∈ [-0.2, 0.6]`.
+
+### Q: Do I have to pass `width` and `height`?
+**A:** No. They are optional and only needed for image-level operations (undistortion maps / `compute_K_new`). For projection, unprojection, Jacobians, and PnP, construct with just the 6 intrinsics.
 
 ### Q: How do I use this with ROS?
-**A:** You can easily wrap `ds_camera_cv.undistortImage` in a ROS node. Subscribe to `image_raw`, undistort, and publish to `image_rect`.
+**A:** You can easily wrap `ds_msp.cv.undistortImage` in a ROS node. Subscribe to `image_raw`, undistort, and publish to `image_rect`.
 
 ---
 

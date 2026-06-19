@@ -49,26 +49,56 @@ class DoubleSphereCamera:
     """
     
     def __init__(self, fx: float, fy: float, cx: float, cy: float,
-                 xi: float, alpha: float, width: int, height: int,
+                 xi: float, alpha: float,
+                 width: Optional[int] = None, height: Optional[int] = None,
                  is_flip: bool = False):
+        # The projection model needs only the 6 intrinsics. `width`/`height` are
+        # used solely by the image-level helpers (undistortion maps, K_new); they
+        # are optional so the model can be built for pure project/unproject/PnP
+        # without inventing meaningless image dimensions.
+        if not (0.0 <= alpha <= 1.0):
+            raise ValueError(f"alpha must be in [0, 1], got {alpha}")
         self.fx = fx
         self.fy = fy
-        self.cx_orig = cx  # Store original cx
+        self.cx = cx
         self.cy = cy
         self.xi = xi
         self.alpha = alpha
         self.width = width
         self.height = height
         self.is_flip = is_flip
-        
-        # Adjust cx for flipped images
-        # When driver is flipped: cx_flipped = width - cx_original
-        self.cx = (width - cx) if is_flip else cx
-        
+
         # Cache for undistortion
         self._mapx = None
         self._mapy = None
         self._K_new = None
+
+    def _require_dims(self, what: str) -> None:
+        if self.width is None or self.height is None:
+            raise ValueError(
+                f"{what} requires image dimensions; construct with "
+                f"width=... and height=... (only needed for image-level ops)."
+            )
+
+    @property
+    def K(self) -> np.ndarray:
+        """Pinhole intrinsic matrix [[fx,0,cx],[0,fy,cy],[0,0,1]]."""
+        return np.array([
+            [self.fx, 0.0, self.cx],
+            [0.0, self.fy, self.cy],
+            [0.0, 0.0, 1.0],
+        ], dtype=np.float64)
+
+    @property
+    def D(self) -> np.ndarray:
+        """Double Sphere distortion coefficients [xi, alpha]."""
+        return np.array([self.xi, self.alpha], dtype=np.float64)
+
+    def __repr__(self) -> str:
+        dims = f", width={self.width}, height={self.height}" if self.width else ""
+        return (f"DoubleSphereCamera(fx={self.fx:.3f}, fy={self.fy:.3f}, "
+                f"cx={self.cx:.3f}, cy={self.cy:.3f}, xi={self.xi:.4f}, "
+                f"alpha={self.alpha:.4f}{dims})")
     
     @classmethod
     def from_json(cls, json_path: str):
@@ -76,31 +106,51 @@ class DoubleSphereCamera:
         with open(json_path, 'r') as f:
             data = json.load(f)
         
-        if 'intrinsics' in data:
+        # 1. Top-level calibration output format
+        if 'fx' in data and 'fy' in data and 'cx' in data and 'cy' in data:
+            fx = data['fx']
+            fy = data['fy']
+            cx = data['cx']
+            cy = data['cy']
+            xi = data.get('xi', 0.0)
+            alpha = data.get('alpha', 0.5)
+            width = data.get('image_width', data.get('width', 1920))
+            height = data.get('image_height', data.get('height', 1080))
+            is_flip = data.get('is_flip', False)
+            return cls(fx, fy, cx, cy, xi, alpha, width, height, is_flip)
+            
+        # 2. Nested intrinsics format
+        elif 'intrinsics' in data:
             intrinsic = data['intrinsics']
             width = data.get('image_width', 640)
             height = data.get('image_height', 480)
+            return cls(
+                fx=intrinsic['fx'], fy=intrinsic['fy'],
+                cx=intrinsic['cx'], cy=intrinsic['cy'],
+                xi=intrinsic['xi'], alpha=intrinsic['alpha'],
+                width=width, height=height
+            )
+            
+        # 3. Third-party nested resolution format
         else:
-            cam_data = list(data.values())[0]
-            intrinsic = cam_data['intrinsics'][0]['intrinsics']
-            resolution = cam_data['resolution'][0]
-            width, height = resolution[0], resolution[1]
-        
-        return cls(
-            fx=intrinsic['fx'], fy=intrinsic['fy'],
-            cx=intrinsic['cx'], cy=intrinsic['cy'],
-            xi=intrinsic['xi'], alpha=intrinsic['alpha'],
-            width=width, height=height
-        )
+            try:
+                cam_data = list(data.values())[0]
+                intrinsic = cam_data['intrinsics'][0]['intrinsics']
+                resolution = cam_data['resolution'][0]
+                width, height = resolution[0], resolution[1]
+                return cls(
+                    fx=intrinsic['fx'], fy=intrinsic['fy'],
+                    cx=intrinsic['cx'], cy=intrinsic['cy'],
+                    xi=intrinsic['xi'], alpha=intrinsic['alpha'],
+                    width=width, height=height
+                )
+            except (KeyError, IndexError, TypeError) as e:
+                raise ValueError(f"Unsupported calibration JSON format: {e}")
     
     # ========================================================================
     # Core Projection/Unprojection
     # ========================================================================
-    
-    # ========================================================================
-    # Core Projection/Unprojection
-    # ========================================================================
-    
+
     def project(self, points_3d: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Project 3D points to 2D pixel coordinates.
@@ -148,14 +198,8 @@ class DoubleSphereCamera:
         K_new : (3, 3) array
             New intrinsic matrix
         """
-        focal_scale = 0.4 + balance * 0.4  # Range: 0.4 to 0.8
-        f_new = ((self.fx + self.fy) / 2.0) * focal_scale
-        
-        return np.array([
-            [f_new, 0, self.width / 2.0],
-            [0, f_new, self.height / 2.0],
-            [0, 0, 1]
-        ], dtype=np.float64)
+        self._require_dims("compute_K_new")
+        return balanced_pinhole_K(self.fx, self.fy, self.width, self.height, balance)
     
     def get_undistortion_maps(self, K_new: Optional[np.ndarray] = None
                              ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -174,11 +218,13 @@ class DoubleSphereCamera:
         K_new : (3, 3) array
             Intrinsic matrix used
         """
-        if self._mapx is not None and K_new is None:
-            return self._mapx, self._mapy, self._K_new
-        
+        self._require_dims("get_undistortion_maps")
         if K_new is None:
             K_new = self.compute_K_new()
+
+        if self._mapx is not None and self._K_new is not None:
+            if np.array_equal(K_new, self._K_new):
+                return self._mapx, self._mapy, self._K_new
         
         fx_new, fy_new = K_new[0, 0], K_new[1, 1]
         cx_new, cy_new = K_new[0, 2], K_new[1, 2]
@@ -192,7 +238,6 @@ class DoubleSphereCamera:
         mx = (x_grid - cx_new) / fx_new
         my = (y_grid - cy_new) / fy_new
         rays = np.stack([mx, my, np.ones_like(mx)], axis=-1)
-        rays = rays / np.linalg.norm(rays, axis=-1, keepdims=True)
         
         # Project back to distorted image
         distorted_pts, valid = self.project(rays)
@@ -202,8 +247,7 @@ class DoubleSphereCamera:
         mapx[~valid] = -1
         mapy[~valid] = -1
         
-        if K_new is None or (K_new == self.compute_K_new()).all():
-            self._mapx, self._mapy, self._K_new = mapx, mapy, K_new
+        self._mapx, self._mapy, self._K_new = mapx, mapy, K_new
         
         return mapx, mapy, K_new
     
@@ -286,14 +330,19 @@ class DoubleSphereCamera:
             Translation vector
         """
         rays, valid = self.unproject(points_2d)
-        
-        if not valid.all():
-            points_3d = points_3d[valid]
-            rays = rays[valid]
+
+        # PnP runs in the pinhole-normalized plane (x/z, y/z), which is only
+        # defined for rays in front of the camera (z > 0). Rays at or beyond
+        # 90 deg would project to sign-flipped / unbounded coordinates and
+        # corrupt the solve, so keep only the front-facing, valid rays.
+        usable = valid & (rays[:, 2] > 1e-6)
+        if not usable.all():
+            points_3d = points_3d[usable]
+            rays = rays[usable]
             if len(points_3d) < 4:
                 return False, None, None
-        
-        rays_norm = rays / (rays[:, 2:3] + 1e-10)
+
+        rays_norm = rays / rays[:, 2:3]
         points_2d_norm = rays_norm[:, :2]
         
         success, rvec, tvec = cv2.solvePnP(
@@ -392,12 +441,35 @@ def solve_pnp_fisheye(points_3d: np.ndarray, points_2d: np.ndarray,
                       xi: float, alpha: float
                      ) -> Tuple[bool, Optional[np.ndarray], Optional[np.ndarray]]:
     """Quick function to solve PnP for fisheye camera."""
-    cam = DoubleSphereCamera(fx, fy, cx, cy, xi, alpha, 640, 480)
+    cam = DoubleSphereCamera(fx, fy, cx, cy, xi, alpha)
     return cam.solve_pnp(points_3d, points_2d)
 
 # ============================================================================
 # Standalone Core Functions (Optimized for Calibration)
 # ============================================================================
+
+def balanced_pinhole_K(fx: float, fy: float, width: int, height: int,
+                       balance: float = 0.5) -> np.ndarray:
+    """
+    Build a pinhole intrinsic matrix for the undistorted (rectified) image.
+
+    The new focal length is a fraction of the original, controlled by `balance`:
+        balance 0.0 -> 0.4x  (widest FOV, more of the scene kept)
+        balance 0.5 -> 0.6x  (default)
+        balance 1.0 -> 0.8x  (narrowest FOV, least peripheral stretch)
+    The principal point is placed at the image center.
+
+    This is the single source of truth shared by DoubleSphereCamera.compute_K_new,
+    the LDC mesh generator, and the cv2-style estimateNewCameraMatrix wrapper.
+    """
+    focal_scale = 0.4 + balance * 0.4
+    f_new = ((fx + fy) / 2.0) * focal_scale
+    return np.array([
+        [f_new, 0.0, width / 2.0],
+        [0.0, f_new, height / 2.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float64)
+
 
 def ds_project(points_3d: np.ndarray, fx: float, fy: float, cx: float, cy: float,
                xi: float, alpha: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -406,20 +478,113 @@ def ds_project(points_3d: np.ndarray, fx: float, fy: float, cx: float, cy: float
     Returns: u, v, valid
     """
     x, y, z = points_3d[..., 0], points_3d[..., 1], points_3d[..., 2]
-    
-    valid = z > 0
+
     d1 = np.sqrt(x*x + y*y + z*z)
     z1 = z + xi * d1
     d2 = np.sqrt(x*x + y*y + z1*z1)
     den = alpha * d2 + (1.0 - alpha) * z1
-    
-    valid &= den > 1e-8
+
+    # Projectability is a half-space condition, NOT simply z > 0.
+    # Using z > 0 would clip the field of view to < 180 deg and silently drop
+    # the very wide-angle rays the Double Sphere model exists to represent.
+    # Per Usenko et al. 2018 (Eq. 43-45): the point is projectable iff
+    #     z > -w2 * d1,
+    # with w1 piecewise in alpha and w2 derived from w1 and xi.
+    if alpha > 0.5:
+        w1 = (1.0 - alpha) / alpha
+    else:
+        w1 = alpha / (1.0 - alpha)
+    w2 = (w1 + xi) / np.sqrt(max(2.0 * w1 * xi + xi * xi + 1.0, 1e-12))
+
+    valid = (z > -w2 * d1) & (den > 1e-8)
     den = np.maximum(den, 1e-8)
-    
+
     u = fx * x / den + cx
     v = fy * y / den + cy
-    
+
     return u, v, valid
+
+def ds_project_jacobian(points_3d: np.ndarray, fx: float, fy: float,
+                        cx: float, cy: float, xi: float, alpha: float
+                        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Analytic Jacobian of the Double Sphere projection.
+
+    Closed-form derivatives are exact, allocation-free, and far cheaper than
+    finite differences (no step-size tuning, no cancellation), which makes
+    Levenberg-Marquardt / Gauss-Newton calibration both faster and more robust.
+
+    Parameters
+    ----------
+    points_3d : (..., 3) array
+        Points in camera coordinates.
+
+    Returns
+    -------
+    u, v : (...,) arrays
+        Projected pixel coordinates.
+    J_point : (..., 2, 3) array
+        d(u, v) / d(x, y, z).
+    J_intr : (..., 2, 6) array
+        d(u, v) / d(fx, fy, cx, cy, xi, alpha).
+    valid : (...,) bool array
+        Projectability mask (same condition as ds_project).
+    """
+    x, y, z = points_3d[..., 0], points_3d[..., 1], points_3d[..., 2]
+
+    d1 = np.sqrt(x*x + y*y + z*z)
+    d1 = np.maximum(d1, 1e-12)
+    z1 = z + xi * d1
+    d2 = np.sqrt(x*x + y*y + z1*z1)
+    d2 = np.maximum(d2, 1e-12)
+    den = alpha * d2 + (1.0 - alpha) * z1
+
+    if alpha > 0.5:
+        w1 = (1.0 - alpha) / alpha
+    else:
+        w1 = alpha / (1.0 - alpha)
+    w2 = (w1 + xi) / np.sqrt(max(2.0 * w1 * xi + xi * xi + 1.0, 1e-12))
+    valid = (z > -w2 * d1) & (den > 1e-8)
+
+    den = np.where(np.abs(den) < 1e-12, 1e-12, den)
+    inv = 1.0 / den
+    inv2 = inv * inv
+    u = fx * x * inv + cx
+    v = fy * y * inv + cy
+
+    # Shared sub-expressions for the denominator's derivatives.
+    A = alpha * z1 / d2 + (1.0 - alpha)      # appears in d(den)/dxi and d(den)/dz
+    B = 1.0 + xi * z1 / d1
+    Cz = 1.0 + xi * z / d1
+
+    dden_dx = alpha * x * B / d2 + (1.0 - alpha) * xi * x / d1
+    dden_dy = alpha * y * B / d2 + (1.0 - alpha) * xi * y / d1
+    dden_dz = Cz * A
+    dden_dxi = d1 * A
+    dden_dalpha = d2 - z1
+
+    # Jacobian w.r.t. the 3D point.
+    J_point = np.empty(points_3d.shape[:-1] + (2, 3), dtype=np.float64)
+    J_point[..., 0, 0] = fx * (den - x * dden_dx) * inv2
+    J_point[..., 0, 1] = fx * (-x * dden_dy) * inv2
+    J_point[..., 0, 2] = fx * (-x * dden_dz) * inv2
+    J_point[..., 1, 0] = fy * (-y * dden_dx) * inv2
+    J_point[..., 1, 1] = fy * (den - y * dden_dy) * inv2
+    J_point[..., 1, 2] = fy * (-y * dden_dz) * inv2
+
+    # Jacobian w.r.t. intrinsics [fx, fy, cx, cy, xi, alpha].
+    J_intr = np.zeros(points_3d.shape[:-1] + (2, 6), dtype=np.float64)
+    J_intr[..., 0, 0] = x * inv          # du/dfx
+    J_intr[..., 0, 2] = 1.0              # du/dcx
+    J_intr[..., 0, 4] = -fx * x * inv2 * dden_dxi
+    J_intr[..., 0, 5] = -fx * x * inv2 * dden_dalpha
+    J_intr[..., 1, 1] = y * inv          # dv/dfy
+    J_intr[..., 1, 3] = 1.0              # dv/dcy
+    J_intr[..., 1, 4] = -fy * y * inv2 * dden_dxi
+    J_intr[..., 1, 5] = -fy * y * inv2 * dden_dalpha
+
+    return u, v, J_point, J_intr, valid
+
 
 def ds_unproject(points_2d: np.ndarray, fx: float, fy: float, cx: float, cy: float,
                  xi: float, alpha: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -433,17 +598,30 @@ def ds_unproject(points_2d: np.ndarray, fx: float, fy: float, cx: float, cy: flo
     my = (v - cy) / fy
     r2 = mx*mx + my*my
     
-    # Validity check
+    # Validity check 1: Sphere intersection check
     s = 1.0 - (2.0 * alpha - 1.0) * r2
-    valid = s >= 0
+    valid_s = s >= 0
     s = np.maximum(s, 0.0)
     
     # Closed-form unprojection
     mz = (1.0 - alpha*alpha * r2) / (alpha * np.sqrt(s) + (1.0 - alpha))
-    k = (mz * xi + np.sqrt(mz*mz + (1.0 - xi*xi) * r2)) / np.maximum(mz*mz + r2, 1e-10)
+    
+    # Validity check 2: Feasible ray scale check (prevents nan in sqrt)
+    sqrt_arg = mz*mz + (1.0 - xi*xi) * r2
+    valid_sqrt = sqrt_arg >= 0
+    
+    # Combined validity mask
+    valid = valid_s & valid_sqrt
+    
+    # Safe square root calculation
+    sqrt_safe = np.sqrt(np.maximum(sqrt_arg, 0.0))
+    k = (mz * xi + sqrt_safe) / np.maximum(mz*mz + r2, 1e-10)
     
     ray = np.stack([k * mx, k * my, k * mz - xi], axis=-1)
     norm = np.linalg.norm(ray, axis=-1, keepdims=True)
     ray = ray / np.maximum(norm, 1e-10)
+    
+    # Safely zero out invalid rays to prevent NaN propagation
+    ray[~valid] = 0.0
     
     return ray, valid

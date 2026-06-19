@@ -13,3 +13,6 @@ results/
 
 # System
 .DS_Store
+
+# Verification outputs (regenerate via verify_real_samples.py)
+verification_output/

@@ -27,7 +27,7 @@ from ds_msp.utils import (
 )
 
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+project_root = os.path.dirname(os.path.abspath(__file__))
 
 
 # ============================================================================
@@ -143,9 +143,12 @@ def main_validate():
     for i in range(num_images):
 
         img_rel = image_info_list[i]["file_name"]     # e.g., samples/000011.jpg
-        # Always resolve paths relative to project root
+        # Resolve image relative to the project, then fall back to assets/.
         img_path = os.path.join(project_root, img_rel)
-
+        if not os.path.exists(img_path):
+            assets_path = os.path.join(project_root, "assets", os.path.basename(img_rel))
+            if os.path.exists(assets_path):
+                img_path = assets_path
 
         img = cv2.imread(img_path)
         if img is None:
@@ -169,7 +172,8 @@ def main_validate():
         Xc = (R_i @ Xw.T).T + t_i.reshape(1, 3)
 
         # project via Double Sphere
-        uv_proj, valid_ds = ds_project(Xc, fx, fy, cx, cy, xi, alpha)
+        u_proj, v_proj, valid_ds = ds_project(Xc, fx, fy, cx, cy, xi, alpha)
+        uv_proj = np.stack([u_proj, v_proj], axis=-1)
         valid_mask = vis & valid_ds
 
         # RMS error
