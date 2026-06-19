@@ -8,5 +8,7 @@ from .contracts import (
     Rays,
     Valid,
 )
+from .pinhole import balanced_pinhole_K
 
-__all__ = ["CameraModel", "Points3D", "Pixels", "Rays", "Valid", "Params"]
+__all__ = ["CameraModel", "Points3D", "Pixels", "Rays", "Valid", "Params",
+           "balanced_pinhole_K"]

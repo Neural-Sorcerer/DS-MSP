@@ -1,7 +1,7 @@
 """Camera model implementations (each satisfies core.contracts.CameraModel)."""
 
+from ..core.pinhole import balanced_pinhole_K
 from .ds_math import (
-    balanced_pinhole_K,
     ds_project,
     ds_project_jacobian,
     ds_unproject,
