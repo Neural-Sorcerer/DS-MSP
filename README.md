@@ -298,11 +298,16 @@ img_rect, K_new = Undistorter(kb, 1920, 1080).undistort_image(img)
 cv2.fisheye.undistortImage(img, kb.K, kb.distortion, Knew=K_new)   # direct OpenCV interop
 ```
 
-All models share project / unproject / **analytic Jacobians** (no autodiff); KB and
-RadTan match OpenCV to ~1e-13. You can also **calibrate any model**
-(`ds_msp.calib.calibrate`) and read/write **Kalibr YAML** (`ds_msp.io`). Full guide,
-per-model parameters, conversion-accuracy table, and Kalibr field orderings:
-**[`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md)**.
+All models share the **same API** — `project` / `unproject` (2D↔3D), image
+undistortion, point `undistort_points` / `distort_points`, and `solve_pnp` — so
+swapping models is a one-line change. All use **analytic Jacobians** (no autodiff);
+KB and RadTan match OpenCV to ~1e-13. You can also **calibrate any model**
+(`ds_msp.calib.calibrate`) and read/write **Kalibr YAML** (`ds_msp.io`).
+
+See **[`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md)** for the full guide: how each
+model's geometry works, the **camera-geometry cookbook** (project/unproject,
+undistort, point distort/undistort, PnP — identical on every model), the
+conversion-accuracy table, and Kalibr field orderings.
 
 ---
 
