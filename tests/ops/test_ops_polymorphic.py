@@ -49,6 +49,20 @@ def test_undistorter_runs_on_any_model(factory):
     assert mapx1 is mapx2
 
 
+@pytest.mark.parametrize("factory", MODELS, ids=lambda f: f().name)
+def test_point_distort_undistort_roundtrip(factory):
+    model = factory()
+    und = Undistorter(model, 640, 480)
+    K_new = und.new_K(0.5)
+    # central distorted pixels round-trip through undistort -> distort
+    pts = np.array([[320.0, 240.0], [360.0, 250.0], [300.0, 230.0]])
+    rect, v1 = und.undistort_points(pts, K_new)
+    back, v2 = und.distort_points(rect, K_new)
+    ok = v1 & v2
+    assert ok.any()
+    assert np.allclose(back[ok], pts[ok], atol=1e-3)
+
+
 def test_ops_match_legacy_ds_camera():
     params = dict(fx=711.57, fy=711.24, cx=949.18, cy=518.81, xi=0.183, alpha=0.809)
     model = DoubleSphereModel(**params)

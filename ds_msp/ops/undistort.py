@@ -66,6 +66,7 @@ class Undistorter:
 
     def undistort_points(self, points: np.ndarray, K_new: Optional[np.ndarray] = None
                          ) -> Tuple[np.ndarray, np.ndarray]:
+        """Distorted pixels -> rectified pinhole pixels (in the ``K_new`` frame)."""
         if K_new is None:
             K_new = self.new_K()
         rays, valid = self.model.unproject(np.asarray(points, dtype=np.float64))
@@ -73,3 +74,16 @@ class Undistorter:
         u = K_new[0, 0] * rays_n[:, 0] + K_new[0, 2]
         v = K_new[1, 1] * rays_n[:, 1] + K_new[1, 2]
         return np.stack([u, v], axis=-1), valid
+
+    def distort_points(self, points: np.ndarray, K_new: Optional[np.ndarray] = None
+                       ) -> Tuple[np.ndarray, np.ndarray]:
+        """Inverse of :meth:`undistort_points`: rectified pinhole pixels (in the
+        ``K_new`` frame) -> distorted pixels in the original image."""
+        if K_new is None:
+            K_new = self.new_K()
+        pts = np.asarray(points, dtype=np.float64)
+        mx = (pts[:, 0] - K_new[0, 2]) / K_new[0, 0]
+        my = (pts[:, 1] - K_new[1, 2]) / K_new[1, 1]
+        rays = np.stack([mx, my, np.ones_like(mx)], axis=-1)
+        rays = rays / np.linalg.norm(rays, axis=-1, keepdims=True)
+        return self.model.project(rays)

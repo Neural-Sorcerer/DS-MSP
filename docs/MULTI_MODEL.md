@@ -30,6 +30,25 @@ value-object class.
 KB project matches `cv2.fisheye` and RadTan matches `cv2.projectPoints` to ~1e-13.
 Every model's analytic Jacobian is gradient-checked against finite differences.
 
+### How each model's 2D↔3D geometry works
+
+All models share the same idea: **project** maps a 3D camera-frame point to a pixel,
+**unproject** maps a pixel back to a unit bearing ray. They differ only in the
+distortion they apply along the way:
+
+- **Double Sphere** — projects through *two* offset unit spheres (`xi` = inter-sphere
+  shift, `alpha` = blend). Handles >180° FOV with a closed-form unprojection.
+- **UCM** — a single sphere (DS with `xi=0`); one `alpha` controls curvature.
+- **EUCM** — UCM with a `beta` that stretches the radial term, fitting more lenses.
+- **Kannala-Brandt** — equidistant: distorts the *angle* `θ` from the axis by an odd
+  polynomial `θ + k1θ³ + k2θ⁵ + k3θ⁷ + k4θ⁹`. This is OpenCV's `cv2.fisheye`.
+- **RadTan** — classic pinhole: perspective-divides, then applies Brown radial
+  (`k1,k2,k3`) + tangential (`p1,p2`) distortion. Narrow FOV (needs `z>0`).
+- **OCamCalib** — Scaramuzza: a polynomial in the sensor radius `ρ` plus an affine
+  stretch; unprojection is the polynomial, projection inverts it numerically.
+
+You don't need these details to use them — the API below is identical for all.
+
 ---
 
 ## 2. Converting between models (no images, no recalibration)
@@ -71,26 +90,79 @@ rt, report = convert(ds, RadTanModel, width=1920, height=1080, max_fov_deg=120)
 
 ---
 
-## 3. Every feature works on any model
+## 3. Camera-geometry cookbook (identical on every model)
 
-Because the services depend only on the `CameraModel` contract, a converted model
-is a first-class citizen:
+Every service depends only on the `CameraModel` contract, so **you swap models by
+changing one line** — pick any model (calibrated directly or `convert`-ed) and the
+rest of your code is unchanged. Below, `cam` is *any* model instance.
 
 ```python
-from ds_msp import Undistorter, solve_pnp
-import cv2
-
-kb, _ = convert(ds, KannalaBrandtModel, width=1920, height=1080)
-
-# Pose estimation
-ok, rvec, tvec = solve_pnp(kb, object_points, image_points)
-
-# Undistortion (map cache lives in the service, not the model)
-img_rect, K_new = Undistorter(kb, 1920, 1080).undistort_image(img)
-
-# Direct OpenCV interop — KB's K and distortion drop straight in
-cv2.fisheye.undistortImage(img, kb.K, kb.distortion, Knew=K_new)
+from ds_msp import DoubleSphereModel, KannalaBrandtModel, convert
+# Pick ONE — swap freely:
+cam = DoubleSphereModel.from_dict(json.load(open("results/calibration_params.json")))
+# cam = convert(cam, KannalaBrandtModel, width=1920, height=1080)[0]
 ```
+
+### 3.1 Project / unproject (the core 2D↔3D geometry)
+```python
+import numpy as np
+# 3D camera-frame points (N,3) -> pixels (N,2) + per-point validity mask
+pts_3d = np.array([[0.1, 0.0, 2.0], [0.4, -0.2, 3.0]])
+uv, valid = cam.project(pts_3d)
+
+# pixels (N,2) -> unit bearing rays (N,3) + validity
+rays, valid = cam.unproject(uv)              # rays are unit-norm
+```
+`valid` flags points the model cannot represent (e.g. behind a narrow lens, or
+outside a fisheye's FOV). Always mask by it.
+
+### 3.2 Undistort an image to a pinhole view
+```python
+from ds_msp import Undistorter
+und = Undistorter(cam, width=1920, height=1080)     # stateful map cache lives here
+K_new = und.new_K(balance=0.5)                      # 0.0 widest FOV … 1.0 tightest crop
+img_rect, K_new = und.undistort_image(img, K_new)   # cv2.remap under the hood
+```
+
+### 3.3 Undistort / distort points (keypoints ↔ rectified frame)
+```python
+# distorted pixels  ->  rectified pinhole pixels (in the K_new frame)
+kp_rect, valid = und.undistort_points(distorted_kpts, K_new)
+
+# rectified pinhole pixels  ->  distorted pixels (exact inverse)
+kp_dist, valid = und.distort_points(kp_rect, K_new)
+```
+Use `undistort_points` to move detections into a pinhole frame for classic
+algorithms; use `distort_points` to draw pinhole-space results back onto the
+original fisheye image. Both round-trip to sub-pixel on every model.
+
+### 3.4 Pose estimation (PnP)
+```python
+from ds_msp import solve_pnp
+ok, rvec, tvec = solve_pnp(cam, object_points_3d, image_points_2d)
+```
+Works for any fisheye/omni model: it unprojects to bearing rays, keeps the
+front-facing ones, and solves PnP in the normalized plane.
+
+### 3.5 Direct OpenCV interop
+For KB and RadTan, `cam.K` and `cam.distortion` plug straight into OpenCV:
+```python
+import cv2
+cv2.fisheye.undistortImage(img, kb.K, kb.distortion, Knew=K_new)        # KB
+cv2.projectPoints(obj, rvec, tvec, rt.K, rt.distortion)                 # RadTan
+```
+
+### 3.6 Calibrate or save
+```python
+from ds_msp.calib import calibrate
+from ds_msp.io import save_kalibr
+result = calibrate(cam, X_world_list, keypoints_list, visibility_list)  # any model
+save_kalibr(cam, "camchain.yaml", 1920, 1080)                           # Kalibr YAML
+```
+
+> **Swapping models is a one-line change.** Calibrate once, `convert` to whatever
+> model your downstream tool wants (OpenCV fisheye, a Kalibr pipeline, a pinhole
+> SLAM front-end…), and every call above behaves identically.
 
 ---
 
