@@ -12,6 +12,7 @@ from ds_msp.testing import FakeModel
 from ds_msp.models.double_sphere import DoubleSphereModel
 from ds_msp.models.ucm import UCMModel
 from ds_msp.models.eucm import EUCMModel
+from ds_msp.models.kb import KannalaBrandtModel
 
 W, H = 1920, 1080
 
@@ -37,6 +38,15 @@ def test_ds_to_eucm_is_near_exact():
     eucm, report = convert(ds, EUCMModel, width=W, height=H, n_samples=600)
     assert report["converged"]
     assert report["rms_px"] < 0.5, report
+
+
+def test_ds_to_kb_is_accurate_and_opencv_ready():
+    # KB (equidistant) represents DS well; result must be cv2.fisheye-ready.
+    ds = DoubleSphereModel.sample()
+    kb, report = convert(ds, KannalaBrandtModel, width=W, height=H, n_samples=600)
+    assert report["converged"]
+    assert report["rms_px"] < 1.0, report
+    assert kb.K.shape == (3, 3) and kb.distortion.shape == (4,)
 
 
 def test_ds_to_ucm_runs_and_reports():

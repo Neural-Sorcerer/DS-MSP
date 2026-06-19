@@ -22,12 +22,13 @@ from ds_msp.testing import (
 from ds_msp.models.double_sphere import DoubleSphereModel
 from ds_msp.models.ucm import UCMModel
 from ds_msp.models.eucm import EUCMModel
+from ds_msp.models.kb import KannalaBrandtModel
 
 MODEL_FACTORIES = list(REFERENCE_MODELS)
 MODEL_FACTORIES.append(("ds", DoubleSphereModel.sample))
 MODEL_FACTORIES.append(("ucm", UCMModel.sample))
 MODEL_FACTORIES.append(("eucm", EUCMModel.sample))
-# Phase 4+: append KannalaBrandtModel.sample, ...
+MODEL_FACTORIES.append(("kb", KannalaBrandtModel.sample))
 
 
 @pytest.fixture(params=[f for _, f in MODEL_FACTORIES],

@@ -6,7 +6,7 @@ from .model import (
     undistort_fisheye,
     solve_pnp_fisheye,
 )
-from .models import DoubleSphereModel, EUCMModel, UCMModel
+from .models import DoubleSphereModel, EUCMModel, KannalaBrandtModel, UCMModel
 from .adapt import convert
 from .cv import (
     projectPoints,
