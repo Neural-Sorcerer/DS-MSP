@@ -10,6 +10,7 @@ from .models import (
     DoubleSphereModel,
     EUCMModel,
     KannalaBrandtModel,
+    OCamModel,
     RadTanModel,
     UCMModel,
 )
