@@ -84,9 +84,9 @@ def convert(source: CameraModel, target_cls: Type[CameraModel], *,
                         verbose=2 if verbose else 0)
     target = target_cls.from_params(res.x)
 
-    # 4. evaluate over the image
+    # 4. evaluate over the (possibly FOV-restricted) image region
     report = reprojection_report(source, target, width, height,
-                                 gt_params=None)
+                                 max_fov_deg=max_fov_deg, gt_params=None)
     report["converged"] = bool(res.success)
     report["source_model"] = source.name
     report["target_model"] = target_cls.name

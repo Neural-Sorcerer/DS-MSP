@@ -17,15 +17,22 @@ from .sampling import sample_image_grid
 
 def reprojection_report(source, target, width: int, height: int,
                         n_samples: int = 2000,
+                        max_fov_deg: Optional[float] = None,
                         gt_params: Optional[np.ndarray] = None) -> dict:
     """Measure how well ``target`` reproduces ``source`` over the image.
 
     Returns a dict with rms/max/median pixel error, sample counts, FOV coverage,
-    and (if ``gt_params`` given) parameter error.
+    and (if ``gt_params`` given) parameter error. ``max_fov_deg`` restricts the
+    evaluated region to match a narrower target (e.g. pinhole/RadTan), so the
+    report reflects the region the target is meant to cover rather than being
+    dominated by unrepresentable peripheral rays.
     """
     pixels = sample_image_grid(width, height, n_samples)
     rays, valid = source.unproject(pixels)
     keep = valid & (rays[:, 2] > 1e-6)
+    if max_fov_deg is not None:
+        ang_all = np.degrees(np.arccos(np.clip(rays[:, 2], -1.0, 1.0)))
+        keep &= ang_all <= (max_fov_deg / 2.0)
     pixels_k, rays_k = pixels[keep], rays[keep]
 
     uv, vt = target.project(rays_k)
