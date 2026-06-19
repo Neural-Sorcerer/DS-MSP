@@ -8,10 +8,12 @@ from .ds_math import (
 )
 from .double_sphere import DoubleSphereModel
 from .ucm import UCMModel
+from .eucm import EUCMModel
 
 __all__ = [
     "DoubleSphereModel",
     "UCMModel",
+    "EUCMModel",
     "ds_project",
     "ds_unproject",
     "ds_project_jacobian",
