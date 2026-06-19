@@ -20,10 +20,12 @@ from ds_msp.testing import (
 )
 
 from ds_msp.models.double_sphere import DoubleSphereModel
+from ds_msp.models.ucm import UCMModel
 
 MODEL_FACTORIES = list(REFERENCE_MODELS)
 MODEL_FACTORIES.append(("ds", DoubleSphereModel.sample))
-# Phase 2+: append UCMModel.sample, EUCMModel.sample, KannalaBrandtModel.sample, ...
+MODEL_FACTORIES.append(("ucm", UCMModel.sample))
+# Phase 3+: append EUCMModel.sample, KannalaBrandtModel.sample, ...
 
 
 @pytest.fixture(params=[f for _, f in MODEL_FACTORIES],
