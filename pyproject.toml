@@ -9,6 +9,13 @@ description = "Double Sphere (and multi-model) fisheye camera library with model
 requires-python = ">=3.8"
 dependencies = ["numpy", "opencv-python", "scipy", "pyyaml"]
 
+# Package only the importable library; the top-level scripts (calibrate.py,
+# validate.py, visualize.py, …) are CLI entry points, not part of the package.
+# Without this, setuptools flat-layout auto-discovery is ambiguous and the build
+# fails ("Multiple top-level packages discovered").
+[tool.setuptools.packages.find]
+include = ["ds_msp*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
