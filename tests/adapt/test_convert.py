@@ -1,0 +1,63 @@
+"""
+Converter tests. Includes a real DS -> EUCM / UCM conversion with accuracy
+assertions, and a Fake -> Fake identity (RE ~ 0) proving the converter runs with
+no fisheye model present.
+"""
+
+import numpy as np
+import pytest
+
+from ds_msp.adapt import convert, sample_image_grid
+from ds_msp.testing import FakeModel
+from ds_msp.models.double_sphere import DoubleSphereModel
+from ds_msp.models.ucm import UCMModel
+from ds_msp.models.eucm import EUCMModel
+
+W, H = 1920, 1080
+
+
+def test_sample_grid_count_and_bounds():
+    pts = sample_image_grid(W, H, 500)
+    assert 300 <= len(pts) <= 700
+    assert (pts[:, 0] >= 0).all() and (pts[:, 0] <= W).all()
+    assert (pts[:, 1] >= 0).all() and (pts[:, 1] <= H).all()
+
+
+def test_fake_to_fake_identity():
+    # Pinhole -> pinhole: the converter must recover the source exactly.
+    src = FakeModel(600.0, 605.0, 320.0, 240.0)
+    tgt, report = convert(src, FakeModel, width=640, height=480, n_samples=400)
+    assert report["rms_px"] < 1e-6
+    assert np.allclose(tgt.params, src.params, atol=1e-6)
+
+
+def test_ds_to_eucm_is_near_exact():
+    # EUCM is expressive enough to represent DS very closely.
+    ds = DoubleSphereModel.sample()
+    eucm, report = convert(ds, EUCMModel, width=W, height=H, n_samples=600)
+    assert report["converged"]
+    assert report["rms_px"] < 0.5, report
+
+
+def test_ds_to_ucm_runs_and_reports():
+    # UCM is less expressive than DS; conversion is lossy but must run and report.
+    ds = DoubleSphereModel.sample()
+    ucm, report = convert(ds, UCMModel, width=W, height=H, n_samples=600)
+    assert report["converged"]
+    assert np.isfinite(report["rms_px"])
+    assert report["fov_covered_deg"] > 90.0
+
+
+def test_converter_is_decoupled_from_concrete_models():
+    # convert() receives the target class by injection; it imports no model.
+    import ast
+    import importlib
+    import pathlib
+    mod = importlib.import_module("ds_msp.adapt.convert")
+    src = pathlib.Path(mod.__file__).read_text()
+    tree = ast.parse(src)
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    assert not any("models" in m for m in imported), imported
