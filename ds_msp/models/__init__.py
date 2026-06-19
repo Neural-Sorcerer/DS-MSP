@@ -7,9 +7,11 @@ from .ds_math import (
     ds_unproject,
 )
 from .double_sphere import DoubleSphereModel
+from .ucm import UCMModel
 
 __all__ = [
     "DoubleSphereModel",
+    "UCMModel",
     "ds_project",
     "ds_unproject",
     "ds_project_jacobian",
