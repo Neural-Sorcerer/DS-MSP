@@ -7,7 +7,7 @@ name = "ds_msp"
 version = "0.2.0"
 description = "Double Sphere (and multi-model) fisheye camera library with model conversion"
 requires-python = ">=3.8"
-dependencies = ["numpy", "opencv-python", "scipy"]
+dependencies = ["numpy", "opencv-python", "scipy", "pyyaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
