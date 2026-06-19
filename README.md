@@ -4,6 +4,14 @@
 
 This repository provides a robust, OpenCV-compatible wrapper for the **Double Sphere (DS) Camera Model**. It is designed to be easy to understand, test, and integrate, while offering deep technical insights into the model's capabilities and limitations.
 
+> **It is also a small multi-model camera library.** Calibrate in Double Sphere and
+> **convert the parameters to UCM, EUCM, Kannala-Brandt (OpenCV fisheye), RadTan
+> (OpenCV pinhole), or OCamCalib** — then run every feature on any model. See
+> **[§6.6](#66-multi-model-support--model-conversion)** and the full guide in
+> [`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md). This capability is modeled on
+> **[Fisheye-Calib-Adapter](https://github.com/eowjd0512/fisheye-calib-adapter)**
+> (see [Credits](#10-credits)).
+
 ---
 
 ## 📚 Table of Contents
@@ -266,6 +274,36 @@ K_new    = res["K_new"]        # pinhole intrinsics of the rectified image
 > periphery (its fixed-point iteration is not contractive there). Because the same
 > `K_new` is shared, the analytic points and the LDC image stay consistent to ~0.1 px.
 
+### 6.6. Multi-Model Support & Model Conversion
+
+Beyond Double Sphere, DS-MSP ships a uniform multi-model library (UCM, EUCM,
+Kannala-Brandt = OpenCV fisheye, RadTan = OpenCV pinhole, OCamCalib) behind one
+`CameraModel` interface, and a **converter** to translate calibrated parameters
+between models without images or recalibration — inspired by
+[Fisheye-Calib-Adapter](https://github.com/eowjd0512/fisheye-calib-adapter).
+
+```python
+from ds_msp import DoubleSphereModel, KannalaBrandtModel, convert, Undistorter, solve_pnp
+import cv2, json
+
+ds = DoubleSphereModel.from_dict(json.load(open("results/calibration_params.json")))
+
+# Convert DS -> OpenCV fisheye (KB), no images needed
+kb, report = convert(ds, KannalaBrandtModel, width=1920, height=1080)
+print(report["rms_px"])                                  # ~0.0002 px
+
+# Every feature works on the converted model
+solve_pnp(kb, object_points, image_points)
+img_rect, K_new = Undistorter(kb, 1920, 1080).undistort_image(img)
+cv2.fisheye.undistortImage(img, kb.K, kb.distortion, Knew=K_new)   # direct OpenCV interop
+```
+
+All models share project / unproject / **analytic Jacobians** (no autodiff); KB and
+RadTan match OpenCV to ~1e-13. You can also **calibrate any model**
+(`ds_msp.calib.calibrate`) and read/write **Kalibr YAML** (`ds_msp.io`). Full guide,
+per-model parameters, conversion-accuracy table, and Kalibr field orderings:
+**[`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md)**.
+
 ---
 
 ## 7. Technical Deep Dive: FOV & Undistortion
@@ -402,12 +440,44 @@ LDC fixed-point point-inverter (board near the image edge) — see the LDC best-
 
 ## 10. Credits
 
-This project builds upon excellent open-source work and research. Special thanks to:
+This project builds on excellent open-source work and research. Where we borrowed
+ideas, algorithms, or formats, credit is due to the original authors:
 
-*   **[dscamera](https://github.com/matsuren/dscamera)**: Python tools to use DS camera for basic utilities.
-*   **[Double Sphere Model Explanation](https://jseobyun.tistory.com/455)**: Clear theoretical explanation of the model.
-*   **[Projection Failed Region Analysis](https://jseobyun.tistory.com/457?category=1170976)**: In-depth analysis of the "Cone of Invalidity".
-*   **Muhammadjon Boboev**: For the Python implementation of intrinsics calibration.
+### Model conversion (the multi-model adapter)
+*   **Fisheye-Calib-Adapter** — **Sangjun Lee**, *"Fisheye-Calib-Adapter: An Easy
+    Tool for Fisheye Camera Model Conversion"*, arXiv:**2407.12405** (2024) ·
+    [github.com/eowjd0512/fisheye-calib-adapter](https://github.com/eowjd0512/fisheye-calib-adapter).
+    Our model-conversion design (sample → unproject with the source → linear-seed →
+    nonlinear refine on pixel reprojection error, with per-model analytic
+    Jacobians) and the set of supported models follow this work. The original is
+    C++/Ceres; DS-MSP re-implements the approach in pure Python/SciPy.
+
+### Camera models
+*   **Double Sphere** — **V. Usenko, N. Demmel, D. Cremers**, *"The Double Sphere
+    Camera Model"*, 3DV 2018, arXiv:**1807.08957**. Reference implementation:
+    **[basalt-headers](https://gitlab.com/VladyslavUsenko/basalt-headers)** (the
+    half-space projection-validity condition and analytic Jacobians follow it).
+*   **Kannala-Brandt** (equidistant fisheye) — **J. Kannala, S. Brandt**, 2006;
+    cross-checked against **OpenCV** `cv2.fisheye`.
+*   **Radial-Tangential (Brown-Conrady)** — **D. C. Brown**, 1966; cross-checked
+    against **OpenCV** `cv2.projectPoints` / `calib3d`.
+*   **OCamCalib** (omnidirectional polynomial) — **D. Scaramuzza et al.**
+*   **Extended UCM (EUCM)** — **B. Khomutenko, G. Garcia, P. Martinet**, 2016.
+*   **Unified Camera Model (UCM)** — **C. Geyer & K. Daniilidis** / **C. Mei & P.
+    Rives**.
+
+### Calibration ecosystem & tooling
+*   **Kalibr** — **P. Furgale et al.**, [github.com/ethz-asl/kalibr](https://github.com/ethz-asl/kalibr)
+    (DS & EUCM models contributed by V. Usenko). We follow Kalibr's `camchain`
+    YAML format and per-model field orderings for interop.
+*   **[dscamera](https://github.com/matsuren/dscamera)** — Python DS utilities.
+*   **[Double Sphere Model Explanation](https://jseobyun.tistory.com/455)** &
+    **[Projection-Failed Region Analysis](https://jseobyun.tistory.com/457?category=1170976)**
+    — clear write-ups of the model and its "cone of invalidity".
+
+### This codebase
+*   **Muhammadjon Boboev** — original Python implementation of the Double Sphere
+    intrinsics calibration this project grew from.
 
 ---
 
