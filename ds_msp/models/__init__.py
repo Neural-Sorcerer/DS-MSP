@@ -10,12 +10,14 @@ from .double_sphere import DoubleSphereModel
 from .ucm import UCMModel
 from .eucm import EUCMModel
 from .kb import KannalaBrandtModel
+from .radtan import RadTanModel
 
 __all__ = [
     "DoubleSphereModel",
     "UCMModel",
     "EUCMModel",
     "KannalaBrandtModel",
+    "RadTanModel",
     "ds_project",
     "ds_unproject",
     "ds_project_jacobian",

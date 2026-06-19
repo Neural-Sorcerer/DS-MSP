@@ -13,6 +13,7 @@ from ds_msp.models.double_sphere import DoubleSphereModel
 from ds_msp.models.ucm import UCMModel
 from ds_msp.models.eucm import EUCMModel
 from ds_msp.models.kb import KannalaBrandtModel
+from ds_msp.models.radtan import RadTanModel
 
 W, H = 1920, 1080
 
@@ -56,6 +57,17 @@ def test_ds_to_ucm_runs_and_reports():
     assert report["converged"]
     assert np.isfinite(report["rms_px"])
     assert report["fov_covered_deg"] > 90.0
+
+
+def test_ds_to_radtan_is_lossy_but_reported():
+    # Pinhole/RadTan cannot hold a wide fisheye FOV; restrict the FOV and check
+    # the converter still runs and reports coverage (it WILL be lossy).
+    ds = DoubleSphereModel.sample()
+    rt, report = convert(ds, RadTanModel, width=W, height=H, n_samples=600,
+                         max_fov_deg=120.0)
+    assert report["converged"]
+    assert np.isfinite(report["rms_px"])
+    assert report["fov_covered_deg"] <= 121.0
 
 
 def test_converter_is_decoupled_from_concrete_models():
