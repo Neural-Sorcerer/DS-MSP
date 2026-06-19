@@ -8,6 +8,7 @@ from .model import (
 )
 from .models import DoubleSphereModel, EUCMModel, KannalaBrandtModel, UCMModel
 from .adapt import convert
+from .ops import Undistorter, solve_pnp
 from .cv import (
     projectPoints,
     undistortPoints,
