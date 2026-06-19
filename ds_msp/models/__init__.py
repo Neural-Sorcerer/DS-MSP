@@ -11,6 +11,7 @@ from .ucm import UCMModel
 from .eucm import EUCMModel
 from .kb import KannalaBrandtModel
 from .radtan import RadTanModel
+from .ocam import OCamModel
 
 __all__ = [
     "DoubleSphereModel",
@@ -18,6 +19,7 @@ __all__ = [
     "EUCMModel",
     "KannalaBrandtModel",
     "RadTanModel",
+    "OCamModel",
     "ds_project",
     "ds_unproject",
     "ds_project_jacobian",
