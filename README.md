@@ -15,7 +15,9 @@ This repository provides a robust, OpenCV-compatible wrapper for the **Double Sp
 > 🎓 **New to wide-FOV camera geometry?** This repo doubles as a guided, runnable
 > course. Start with **[`docs/learn/`](docs/learn/README.md)** — each chapter pairs a
 > short explainer with a script that runs on real public data and prints a number you
-> can verify. See the **[Roadmap](docs/ROADMAP.md)** for where it's heading.
+> can verify. The **[🏆 capstone](docs/learn/capstone_calibrating_a_real_camera.md)**
+> calibrates a real fisheye from TUM-VI AprilGrid footage and matches the *published*
+> intrinsics to ~1% (0.18 px RMS). See the **[Roadmap](docs/ROADMAP.md)** for what's next.
 
 ---
 

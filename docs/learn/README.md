@@ -20,7 +20,8 @@ models. No prior fisheye knowledge assumed.
 ```bash
 # 1. Environment (uv recommended; venv/conda fine too)
 uv venv --python 3.12 && source .venv/bin/activate
-uv pip install -e .
+uv pip install -e .            # core library (Chapters 1–2)
+uv pip install -e ".[calib]"   # + AprilGrid detector, for the calibration capstone
 
 # 2. Data — small, free, ~3 GB for the fisheye track
 bash scripts/download_datasets.sh tumvi
@@ -32,12 +33,19 @@ See [`datasets/README.md`](../../datasets/README.md) for what each dataset conta
 | # | Chapter | You'll be able to… | Code anchor |
 |---|---------|--------------------|-------------|
 | 1 | [Fisheye & camera models](01_fisheye_and_camera_models.md) | load a real calibration, prove project/unproject are inverses, rectify a fisheye frame | `examples/01_realdata_fisheye_tumvi.py` |
-| 2 | The Double Sphere model *(coming soon)* | derive DS projection and read it in code | `ds_msp/models/ds_math.py` |
+| 2 | [The Double Sphere model](02_double_sphere_model.md) | derive DS projection, read it in code, and reproduce a published calibration with it | `examples/02_double_sphere_tumvi.py` |
 | 3 | Projection validity & the >180° cone *(coming soon)* | explain why `z>0` is the classic bug | `ds_msp/models/ds_math.py` |
 | 4 | Analytic Jacobians vs autodiff *(coming soon)* | derive a Jacobian and gradient-check it | `ds_msp/model.py` |
 | 5 | Calibration by Levenberg–Marquardt *(coming soon)* | calibrate from corner detections | `calibrate.py`, `ds_msp/calib/` |
 | 6 | One model to another: conversion *(coming soon)* | turn a DS calib into KB/EUCM without re-shooting | `ds_msp/adapt/` |
 | 7 | Reproducing a published calibration *(coming soon)* | match TUM-VI / EuRoC reference numbers with your own code | `ds_msp/io/kalibr.py` |
+
+### 🏆 The capstone (runnable now)
+**[Calibrate a real fisheye camera and match the published numbers](capstone_calibrating_a_real_camera.md)**
+— detect AprilGrid corners in TUM-VI's raw footage, bundle-adjust the intrinsics from
+scratch, and land within ~1% of the calibration the dataset authors published (0.18 px
+RMS). This is the artifact the chapters build toward; you can run it after Chapter 2.
+Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
 
 Chapters land incrementally — see [`../ROADMAP.md`](../ROADMAP.md) for the build order.
 

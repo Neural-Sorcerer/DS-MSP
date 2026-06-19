@@ -18,17 +18,24 @@ with both a clean implementation *and* a chapter that explains them.
 - Generic Levenberg–Marquardt calibration with analytic Jacobians.
 - Kalibr camchain I/O; OpenCV-compatible wrappers; TI LDC hardware export.
 - Reproducible setup: `pip install -e .`, 166 passing tests, dataset fetcher.
-- Learning track: **Chapter 1** (camera models on real TUM-VI data).
+- Learning track: **Chapters 1–2** — camera models on real TUM-VI data, and the
+  Double Sphere model reproducing TUM-VI's published calibration to 0.025 px.
+- **Capstone**: calibrate a real fisheye end-to-end from AprilGrid footage
+  (`detect → correspond → bundle-adjust`) and match the published intrinsics to
+  ~1% / 0.18 px RMS. AprilGrid detection adds `ds_msp/calib/{targets,detect}.py`
+  and the `[calib]` extra.
 
 ## Next (learning curriculum)
 Build out [`docs/learn/`](learn/README.md) in order, each chapter anchored to existing
 code and a runnable real-data script:
-- **Ch.2** Double Sphere from first principles → `ds_msp/models/ds_math.py`
+- **Ch.2** Double Sphere from first principles → `ds_msp/models/ds_math.py` ✅
 - **Ch.3** Projection validity & the >180° cone (why `z>0` is the classic bug)
 - **Ch.4** Analytic Jacobians vs autodiff — derive, then gradient-check
-- **Ch.5** Calibration by Levenberg–Marquardt from corner detections
+- **Ch.5** Calibration by Levenberg–Marquardt from corner detections — the theory behind
+  the **[capstone](learn/capstone_calibrating_a_real_camera.md)** (already runnable)
 - **Ch.6** Model conversion without re-shooting images
-- **Ch.7** Reproducing a *published* calibration (match TUM-VI / EuRoC reference numbers)
+- **Ch.7** Reproducing a *published* calibration — the capstone already does this for
+  TUM-VI; chapter writes up the method and extends to EuRoC
 
 ## Later (capability — geometry → systems)
 Extensions that turn "camera models" into "perception systems", each laptop-runnable on

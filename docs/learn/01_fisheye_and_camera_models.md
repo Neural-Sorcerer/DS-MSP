@@ -92,5 +92,6 @@ are geometrically un-pinhole-able. (More in Chapter 3.)
 3. Widen the verification grid toward the image edge (`np.linspace(2, W-2, …)`) and watch
    how many pixels fall *outside* the valid mask.
 
-**Next:** Chapter 2 opens up the Double Sphere model and derives its projection from a
-two-sphere geometric picture. *(coming soon — see [`../ROADMAP.md`](../ROADMAP.md))*
+**Next:** [Chapter 2](02_double_sphere_model.md) opens up the Double Sphere model, derives
+its projection from a two-sphere geometric picture, and uses it to reproduce TUM-VI's
+published calibration to a fortieth of a pixel.
