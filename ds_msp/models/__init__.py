@@ -9,11 +9,13 @@ from .ds_math import (
 from .double_sphere import DoubleSphereModel
 from .ucm import UCMModel
 from .eucm import EUCMModel
+from .kb import KannalaBrandtModel
 
 __all__ = [
     "DoubleSphereModel",
     "UCMModel",
     "EUCMModel",
+    "KannalaBrandtModel",
     "ds_project",
     "ds_unproject",
     "ds_project_jacobian",
