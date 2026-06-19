@@ -1,3 +1,4 @@
+from .core.contracts import CameraModel
 from .model import (
     DoubleSphereCamera,
     ds_project,
@@ -5,6 +6,7 @@ from .model import (
     undistort_fisheye,
     solve_pnp_fisheye,
 )
+from .models import DoubleSphereModel
 from .cv import (
     projectPoints,
     undistortPoints,
