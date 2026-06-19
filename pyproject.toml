@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ds_msp"
+version = "0.2.0"
+description = "Double Sphere (and multi-model) fisheye camera library with model conversion"
+requires-python = ">=3.8"
+dependencies = ["numpy", "opencv-python", "scipy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "jac: analytic-Jacobian gradient-check tests (run on every model PR)",
+    "contract: model-agnostic contract suite",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.mypy]
+python_version = "3.8"
+warn_unused_ignores = true
+# Tighten per-module as the typed surface grows; core/ is fully typed.
+[[tool.mypy.overrides]]
+module = "ds_msp.core.*"
+disallow_untyped_defs = true
+
+# --- Decoupling rules (enforced in CI by import-linter; mirrored by the pure
+# --- pytest AST gate in tests/contract/test_independence.py so they hold even
+# --- without the tool installed). Layers listed high -> low; a lower layer may
+# --- never import a higher one.
+[tool.importlinter]
+root_package = "ds_msp"
+
+[[tool.importlinter.contracts]]
+name = "core is the dependency-free foundation"
+type = "forbidden"
+source_modules = ["ds_msp.core"]
+forbidden_modules = [
+    "ds_msp.models", "ds_msp.ops", "ds_msp.adapt",
+    "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
+]
+
+[[tool.importlinter.contracts]]
+name = "services depend on contracts, not concrete models or each other"
+type = "forbidden"
+source_modules = ["ds_msp.ops", "ds_msp.adapt"]
+forbidden_modules = ["ds_msp.ops"]
