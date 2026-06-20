@@ -29,7 +29,8 @@ with both a clean implementation *and* a chapter that explains them.
 Build out [`docs/learn/`](learn/README.md) in order, each chapter anchored to existing
 code and a runnable real-data script:
 - **Ch.2** Double Sphere from first principles → `ds_msp/models/ds_math.py` ✅
-- **Ch.3** Projection validity & the >180° cone (why `z>0` is the classic bug)
+- **Ch.3** Projection validity & the >180° cone (why `z>0` is the classic bug) ✅ —
+  measures the 227° valid cone + the balance/coverage trade (`examples/07_fov_and_validity.py`)
 - **Ch.4** Analytic Jacobians vs autodiff — derive, then gradient-check
 - **Ch.5** Calibration by Levenberg–Marquardt from corner detections — the theory behind
   the **[capstone](learn/capstone_calibrating_a_real_camera.md)** (already runnable)

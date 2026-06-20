@@ -140,5 +140,5 @@ invariant is where rays land, not the raw numbers.)
 
 **Next:** the **[capstone](capstone_calibrating_a_real_camera.md)** — calibrate this camera
 for real from AprilGrid footage and match the published numbers. Or continue the theory
-thread with Chapter 3 (projection validity & the >180° cone). *(Ch.3 coming soon — see
-[`../ROADMAP.md`](../ROADMAP.md))*
+thread with **[Chapter 3](03_projection_validity.md)** — projection validity and the >180°
+cone (why `z > 0` is the classic fisheye bug).
