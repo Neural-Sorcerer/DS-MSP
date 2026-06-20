@@ -29,3 +29,9 @@ datasets/*
 
 # Personal job-hunt strategy notes (kept local, not for the public repo).
 CAREER_ROADMAP.md
+
+# Simulation / rendering studio (LOCAL-ONLY, never committed to this repo).
+# It has its own local git repo and heavy viz dependencies (matplotlib, manim, …).
+# RULE: the studio generates visual assets; only its OUTPUT (copied into assets/)
+# lands here. The generator code and its deps stay out of GitHub entirely.
+/simulations/

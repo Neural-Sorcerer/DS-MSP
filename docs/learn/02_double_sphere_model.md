@@ -45,6 +45,13 @@ So Double Sphere = pinhole + two shape knobs: **`ξ` (sphere spacing)** and **`�
 center you project from)**. Everything else (`fx, fy, cx, cy`) is the ordinary intrinsic
 matrix you already know.
 
+![The Double Sphere two-sphere projection](../../assets/learn/double_sphere_projection.gif)
+
+*The whole construction in 3D: an incoming ray (green) lands on the **first** unit sphere,
+is shifted by `ξ` onto the **second** sphere (orange), then projected from the `α`-blended
+centre (grey) onto the image plane (pink). Watch the incidence angle climb **past 90°** —
+the point still maps, which is the >180° field of view a pinhole can never reach.*
+
 ## 3. Read the projection in code
 
 Here is the entire forward map from
