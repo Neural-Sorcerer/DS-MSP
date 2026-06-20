@@ -9,6 +9,13 @@ box — **Double Sphere** (Usenko, Demmel & Cremers, 3DV 2018) — and shows tha
 short, geometric, and exactly invertible. By the end you'll read
 [`ds_msp/models/ds_math.py`](../../ds_msp/models/ds_math.py) and recognize every line.
 
+![A 3D point projected through both spheres to a fisheye pixel](../../assets/learn/double_sphere_pipeline.gif)
+
+*The whole idea in one picture: follow the bright point as it travels **3D point → sphere 1 →
+sphere 2 → image plane**, while a colourful world of directions fills in the circular fisheye
+image. Every coloured pixel is the exact `ds_project` of its 3D direction — even the ones past
+90°, which a normal camera cannot capture. The sections below dissect each step.*
+
 ## 1. Why another model after Kannala-Brandt?
 
 Kannala-Brandt (Chapter 1's model) describes the lens by a polynomial in the incidence
@@ -44,6 +51,15 @@ Double Sphere uses *two* unit spheres in sequence, governed by two new numbers:
 So Double Sphere = pinhole + two shape knobs: **`ξ` (sphere spacing)** and **`α` (which
 center you project from)**. Everything else (`fx, fy, cx, cy`) is the ordinary intrinsic
 matrix you already know.
+
+![The Double Sphere two-sphere projection](../../assets/learn/double_sphere_projection.gif)
+
+*The construction in cross-section (the model is radially symmetric, so this slice is the
+whole story): an incoming ray (green) lands on the **first** unit sphere, is **shifted by `ξ`**
+onto the **second** sphere (orange), then **projected from the `α`-blended centre** onto the
+image plane — a pixel (pink). The shaded wedge is the valid field of view; watch `θ` climb
+**past 90°** and still land inside it — the >180° reach a pinhole can never have. (Rendered
+from the exact `ds_project` geometry — every point matches the library to ~1e-16.)*
 
 ## 3. Read the projection in code
 
