@@ -124,7 +124,42 @@ elevation re-spaces through $\tan$. Then both axes bend through $\tan$ into the 
 top/bottom punch out to black: the >90° cone has nowhere to land on a flat plane (the
 [Chapter 3](03_projection_validity.md) story, seen from the other side).
 
-## 5. So — can you do 2D/3D tasks on these? Yes, with one caveat
+## 5. Proof on a real board: every corner survives every conversion
+
+Pretty pictures aren't proof. The bundled fisheye has a checkerboard with **30 known corner
+pixels** (`anns.json`) — a perfect ground-truth probe. We push each raw corner through the
+conversion math, `raw pixel → DS-unproject → ray → chart pixel`, and draw it on each
+representation. If the maps are right, every dot must land **exactly** on the checkerboard
+corner you can see in that image — even though the board is shaped completely differently in
+each chart. The green grid connects the corners so you can watch the board bend while the dots
+stay put:
+
+| Raw fisheye | Pinhole (gnomonic) |
+|---|---|
+| ![raw corners](../../assets/learn/corners_raw.png) | ![pinhole corners](../../assets/learn/corners_pinhole.png) |
+| **Sphere (equirectangular)** | **Cylinder** |
+| ![sphere corners](../../assets/learn/corners_sphere.png) | ![cylinder corners](../../assets/learn/corners_cylinder.png) |
+
+The board bows in the sphere, straightens to a perfect rectilinear grid in the pinhole, and
+keeps its verticals straight in the cylinder — yet **not one corner leaves its checkerboard
+intersection**. That is the conversion math working, made visible.
+
+Now the numbers. Round-trip every corner all the way back —
+`raw → ray → chart pixel → ray → raw` — and measure how far it lands from where it started
+(`python examples/08_reproject_sphere_cylinder.py` prints this table):
+
+| Representation | Mean round-trip error | Max | Corners checked |
+|---|---:|---:|---:|
+| Sphere (equirectangular) | 7.5e-14 px | 2.3e-13 px | 30 / 30 |
+| Cylinder | 7.0e-14 px | 2.3e-13 px | 30 / 30 |
+| Pinhole (gnomonic) | 7.4e-14 px | 1.6e-13 px | 30 / 30 |
+
+1e-13 px is float64 round-off: a corner detected in the fisheye returns to within an atom's
+width of itself after a full trip through *any* representation. The pictures and the table
+agree — the conversions move pixels between charts without losing a thing, which is exactly the
+property you need before trusting a representation for real 2D/3D work.
+
+## 6. So — can you do 2D/3D tasks on these? Yes, with one caveat
 
 Because every chart is just a relabelling of the *same rays*, anything ray-based is
 representation-agnostic and transfers directly:

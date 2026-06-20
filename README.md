@@ -86,7 +86,21 @@ awkward special case that can't hold a >180° view. Watch one real fisheye morph
 
 > *Verticals stay straight on the cylinder; the pinhole keeps lines straight but balloons the
 > periphery and drops the polar cone to black — the >180° geometry has nowhere to land on a plane.*
-> Full derivation and the pixel↔pixel formulas:
+
+**Is the conversion math actually correct?** The bundled fisheye has a checkerboard with 30 known
+corner pixels. We push each corner through the math — `raw pixel → unproject → ray → chart pixel`
+— and overlay it on every representation. Every corner lands **exactly** on its checkerboard
+intersection in all four images, and round-trips back to its raw pixel to **7e-14 px**:
+
+| Raw fisheye | Pinhole (gnomonic) |
+| :---: | :---: |
+| ![raw corners](assets/learn/corners_raw.png) | ![pinhole corners](assets/learn/corners_pinhole.png) |
+| **Sphere (equirectangular)** | **Cylinder** |
+| ![sphere corners](assets/learn/corners_sphere.png) | ![cylinder corners](assets/learn/corners_cylinder.png) |
+
+> The board bows on the sphere, straightens on the pinhole, keeps verticals straight on the
+> cylinder — yet no corner ever leaves the checkerboard. Full derivation, the pixel↔pixel
+> formulas, and the per-representation round-trip table:
 > **[sphere/cylinder/pinhole deep-dive](docs/learn/spherical_and_cylindrical_reprojection.md)**
 > (`examples/08`). The 3D pipeline above is built in the [Simulation Studio](docs/WRITING_GUIDE.md#5-make-it-visual).
 
