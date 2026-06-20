@@ -133,9 +133,16 @@ Place patches at **cubemap (6)** or **icosahedron (20)** centers. Convert `(λ,�
 
 ---
 
-## C4 · Sphere-sweep stereo (depth)  🟩  `[F7][F8][F9]`
-**Module:** `ds_msp/stereo/sphere_sweep.py`. Preferred modern wide-FOV stereo — runs **directly
-on calibrated fisheye, no rectification** `[F9]`, dodging ERP's position-dependent disparity `[F7]`.
+## C4 · Sphere-sweep stereo (depth)  🟩  `[F7][F8][F9]` — ✅ **implemented**
+**Module:** `ds_msp/stereo/sphere_sweep.py` — `sphere_sweep` (per-pixel depth by sweeping
+inverse-depth candidates: `X = d·f` → `cam_j.project(R_j X + t_j)` → photo-cost volume → argmin),
+`inverse_depth_samples`, `sweep_to_points`. Runs **directly on calibrated fisheye, no
+rectification** `[F9]`, using only `unproject`/`project`. Verified on a synthetic textured-plane
+DS pair — recovers per-pixel depth to <5% median (`tests/stereo/test_sphere_sweep.py`, 3 tests),
+registered as a 5th independent service layer. *Follow-up:* sub-pixel/soft-argmin depth, feature
+(census/NCC) cost, and C6 spherical rectification. Preferred modern wide-FOV stereo — runs
+**directly on calibrated fisheye, no rectification** `[F9]`, dodging ERP's position-dependent
+disparity `[F7]`.
 
 ### Math / algorithm
 For a reference view with per-pixel ray `f_ref` and candidate **depths** `{dₖ}` (sample **inverse
