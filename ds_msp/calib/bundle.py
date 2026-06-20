@@ -16,10 +16,16 @@ from typing import Dict, List
 
 import cv2
 import numpy as np
-from scipy.optimize import least_squares
 
 from ..core.contracts import CameraModel
-from ..core.lie import so3_exp, so3_right_jacobian
+from ..core.lie import so3_exp
+from ..core.optimize import lm_solve
+
+#: Map the historical SciPy ``loss`` names to the in-house IRLS kernels.
+_LOSS_TO_KERNEL = {
+    "linear": "none", "huber": "huber", "cauchy": "cauchy",
+    "soft_l1": "pseudo_huber",
+}
 
 
 def _skew_batch(V: np.ndarray) -> np.ndarray:
@@ -78,87 +84,84 @@ def calibrate(init_model: CameraModel,
     P = len(cls.param_names)
     n_img = len(X_world_list)
     sizes = [len(X) for X in X_world_list]
+    total = 2 * sum(sizes)
+    masks = [np.asarray(v, bool) for v in visibility_list]
+    lb_i, ub_i = cls.param_bounds()
 
     rvecs, tvecs = _seed_poses(init_model, X_world_list, keypoints_list, visibility_list)
-    # Manifold-correct extrinsics: keep each seed rotation as a base matrix and optimize a *local*
-    # perturbation δω (retracted via R_base·exp([δω]_×)) instead of an absolute axis-angle vector.
-    # δω starts at 0 and stays small for a good seed, so it never nears the ‖r‖=π singularity.
-    R_bases = [cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs]
-    x0 = np.concatenate([init_model.params]
-                        + [np.concatenate([np.zeros(3), t]) for t in tvecs])
+    # Manifold state: each seed rotation is kept as a *base matrix* re-based every accepted step by
+    # the solver (R ← R·exp([δω]_×), δω reset to 0). Because δω is always linearized at 0 the
+    # retraction Jacobian J_r(0) = I drops out — the extrinsics Jacobian is the cheap -R[Xw]_×, and
+    # δω never drifts toward the ‖r‖=π singularity. This is exactly what a black-box scipy solve
+    # (fixed base for the whole solve) cannot do, and why this path is both faster and stabler.
+    R0 = np.stack([cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs])   # (n,3,3)
+    t0 = np.stack([np.asarray(t, float) for t in tvecs])                     # (n,3)
+    state0 = (np.clip(init_model.params, lb_i, ub_i).copy(), R0, t0)
 
-    lb_i, ub_i = cls.param_bounds()
-    ext_lb = np.array([-np.pi, -np.pi, -np.pi, -10.0, -10.0, 1e-3])
-    ext_ub = np.array([np.pi, np.pi, np.pi, 10.0, 10.0, 50.0])
-    lb = np.concatenate([lb_i] + [ext_lb] * n_img)
-    ub = np.concatenate([ub_i] + [ext_ub] * n_img)
-    x0 = np.clip(x0, lb, ub)
-
-    def residual(p):
-        m = cls.from_params(p[:P])
-        out = []
-        off = P
-        for i, (Xw, uv, vis) in enumerate(zip(X_world_list, keypoints_list, visibility_list)):
-            dw, t = p[off:off + 3], p[off + 3:off + 6]
-            off += 6
-            R = R_bases[i] @ so3_exp(dw)
-            Xc = (R @ Xw.T).T + t
-            uvp, valid = m.project(Xc)
-            diff = np.zeros_like(uv, dtype=np.float64)
-            mask = vis & valid
-            diff[mask] = uvp[mask] - uv[mask]
-            out.append(diff.ravel())
-        return np.concatenate(out)
-
-    def jac(p):
-        m = cls.from_params(p[:P])
-        J = np.zeros((2 * sum(sizes), P + 6 * n_img), dtype=np.float64)
+    def residual(state):
+        params, Rb, t = state
+        m = cls.from_params(params)
+        out = np.zeros((total,))
         row = 0
-        off = P
-        for i, (Xw, uv, vis) in enumerate(zip(X_world_list, keypoints_list, visibility_list)):
-            dw = p[off:off + 3]
-            t = p[off + 3:off + 6]
-            off += 6
-            R = R_bases[i] @ so3_exp(dw)
-            Xc = (R @ Xw.T).T + t
+        for i, (Xw, uv) in enumerate(zip(X_world_list, keypoints_list)):
+            N = sizes[i]
+            Xc = (Rb[i] @ Xw.T).T + t[i]
+            uvp, valid = m.project(Xc)
+            mask = masks[i] & valid
+            diff = np.zeros_like(uv, dtype=np.float64)
+            diff[mask] = uvp[mask] - uv[mask]
+            out[row:row + 2 * N] = diff.ravel()
+            row += 2 * N
+        return out
+
+    def jacobian(state):
+        params, Rb, t = state
+        m = cls.from_params(params)
+        J = np.zeros((total, P + 6 * n_img))
+        row = 0
+        for i, (Xw, uv) in enumerate(zip(X_world_list, keypoints_list)):
+            N = sizes[i]
+            Xc = (Rb[i] @ Xw.T).T + t[i]
             _, J_point, J_param, valid = m.project_jacobian(Xc)
-            mask = (vis & valid)[:, None, None].astype(np.float64)
-            # ∂Xc/∂δω = -R [Xw]_× J_r(δω)  (right-perturbation Jacobian of the retraction)
-            dXc_dw = -np.einsum('ij,njk,kl->nil', R, _skew_batch(Xw), so3_right_jacobian(dw))
+            mask = (masks[i] & valid)[:, None, None].astype(np.float64)
+            # δω linearized at 0 ⇒ J_r = I, so ∂Xc/∂δω = -R[Xw]_×; ∂Xc/∂δt = I.
+            dXc_dw = -np.einsum('ij,njk->nik', Rb[i], _skew_batch(Xw))
             J_rvec = np.einsum('nij,njc->nic', J_point, dXc_dw)
             J_ext = np.concatenate([J_rvec, J_point], axis=-1) * mask
-            J_par = J_param * mask
-            N = sizes[i]
-            J[row:row + 2 * N, 0:P] = J_par.reshape(2 * N, P)
+            J[row:row + 2 * N, 0:P] = (J_param * mask).reshape(2 * N, P)
             ec = P + 6 * i
             J[row:row + 2 * N, ec:ec + 6] = J_ext.reshape(2 * N, 6)
             row += 2 * N
         return J
 
-    res = least_squares(residual, x0, jac=jac, bounds=(lb, ub),
-                        method="trf", x_scale="jac", max_nfev=max_nfev, verbose=verbose,
-                        loss=loss, f_scale=f_scale)
+    def retract(state, delta):
+        params, Rb, t = state
+        params = np.clip(params + delta[:P], lb_i, ub_i)         # keep intrinsics valid
+        Rb, t = Rb.copy(), t.copy()
+        for i in range(n_img):
+            d = delta[P + 6 * i:P + 6 * i + 6]
+            Rb[i] = Rb[i] @ so3_exp(d[:3])
+            t[i] = t[i] + d[3:]
+        return (params, Rb, t)
 
-    model = cls.from_params(res.x[:P])
-    # Convert each optimized perturbation back to an absolute (rvec, tvec) so the returned poses
-    # match the original interface (downstream code does cv2.Rodrigues(rvec)).
-    poses = []
-    for i in range(n_img):
-        dw = res.x[P + 6 * i:P + 6 * i + 3]
-        t = res.x[P + 6 * i + 3:P + 6 * i + 6]
-        R = R_bases[i] @ so3_exp(dw)
-        poses.append((cv2.Rodrigues(R)[0].ravel(), np.asarray(t, float)))
+    kernel = _LOSS_TO_KERNEL.get(loss, loss)
+    out = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_nfev,
+                   robust_kernel=kernel, robust_scale=(f_scale if kernel != "none" else 1.0))
+    params, Rb, t = out.state
+    model = cls.from_params(params)
 
-    # True reprojection RMS over valid observations. Computed directly (not from
-    # res.cost) so it means the same thing under any robust ``loss``: a robust
-    # kernel reshapes the cost, but the pixel error of the fit is what we report.
+    # Return absolute (rvec, tvec) per image so downstream code (cv2.Rodrigues) is unaffected.
+    poses = [(cv2.Rodrigues(Rb[i])[0].ravel(), np.asarray(t[i], float)) for i in range(n_img)]
+
+    # True reprojection RMS over valid observations — computed directly so it means the same thing
+    # under any robust kernel (the kernel reshapes the cost; the pixel error of the fit is reported).
     sq, n = 0.0, 0
-    for (rvec, t), Xw, uv, vis in zip(poses, X_world_list, keypoints_list, visibility_list):
+    for (rvec, tv), Xw, uv, vis in zip(poses, X_world_list, keypoints_list, masks):
         R, _ = cv2.Rodrigues(rvec)
-        uvp, valid = model.project((R @ Xw.T).T + t)
-        m = vis & valid
-        d = uvp[m] - uv[m]
+        uvp, valid = model.project((R @ Xw.T).T + tv)
+        mm = vis & valid
+        d = uvp[mm] - uv[mm]
         sq += float((d * d).sum())
-        n += int(m.sum())
+        n += int(mm.sum())
     rms = float(np.sqrt(sq / n)) if n else float("nan")
-    return {"model": model, "poses": poses, "rms_px": rms, "success": bool(res.success)}
+    return {"model": model, "poses": poses, "rms_px": rms, "success": bool(out.success)}

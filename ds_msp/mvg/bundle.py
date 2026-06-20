@@ -13,9 +13,9 @@ from __future__ import annotations
 from typing import Tuple
 
 import numpy as np
-from scipy.optimize import least_squares
 
-from ..core.lie import so3_exp
+from ..core.lie import hat, so3_exp
+from ..core.optimize import lm_solve
 from .two_view import _as_rays
 
 
@@ -50,14 +50,25 @@ def angular_reprojection_error(f1: np.ndarray, f2: np.ndarray,
 
 def refine_two_view(f1: np.ndarray, f2: np.ndarray,
                     R0: np.ndarray, t0: np.ndarray, X0: np.ndarray, *,
-                    max_nfev: int = 100) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                    max_nfev: int = 100, robust_kernel: str = "none",
+                    robust_scale: float | str = 1.0
+                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Nonlinear refinement of ``(R, t, X)`` minimizing the tangent-plane angular residual.
 
-    **Manifold-correct.** The rotation update is a *local perturbation* retracted through the
-    exponential map, ``R = R₀ · exp([δω]_×)`` with ``δω`` optimized from ``0`` — so it never goes
-    near the ``‖r‖ = π`` axis-angle singularity, unlike optimizing an absolute axis-angle vector.
+    **Manifold-correct, in-house solver.** Driven by :func:`ds_msp.core.optimize.lm_solve`,
+    which *re-bases* the rotation every accepted step (``R ← R · exp([δω]_×)``, ``δω`` reset to 0)
+    instead of letting a fixed-base perturbation drift toward the ``‖δω‖ = π`` singularity — so it
+    stays stable at large inter-frame rotation where a flat axis-angle / fixed-base solve wobbles.
+    The Jacobian is **analytic** (the angular residual differentiated through the tangent basis),
+    replacing the old finite-difference ``scipy`` path that stalled at large rotation.
+
     Camera 1 is fixed at the identity (reference frame) and ``t`` is kept unit-length, pinning the
-    7-DOF similarity gauge (the angular error is scale-invariant). Returns the refined ``(R, t, X)``.
+    7-DOF similarity gauge (the angular error is scale-invariant). The translation gauge makes the
+    ``δt`` block rank-deficient by design; the solver's damped-Cholesky floor absorbs it.
+
+    ``robust_kernel`` / ``robust_scale`` optionally turn on IRLS down-weighting of mismatched
+    correspondences (e.g. ``"cauchy"``, ``"auto"``); the default reproduces plain L2. Returns the
+    refined ``(R, t, X)``.
     """
     f1, f2 = _as_rays(f1), _as_rays(f2)
     n = f1.shape[0]
@@ -68,15 +79,8 @@ def refine_two_view(f1: np.ndarray, f2: np.ndarray,
     t0 = t0 / np.linalg.norm(t0)
     X0 = np.asarray(X0, float)
 
-    def unpack(p):
-        R = R0 @ so3_exp(p[:3])                          # retract: base ∘ exp(δω)
-        t = t0 + p[3:6]
-        t = t / np.linalg.norm(t)
-        X = X0 + p[6:].reshape(n, 3)
-        return R, t, X
-
-    def residual(p):
-        R, t, X = unpack(p)
+    def residual(state):
+        R, t, X = state
         d1 = X / np.linalg.norm(X, axis=1, keepdims=True)
         d2 = X @ R.T + t
         d2 /= np.linalg.norm(d2, axis=1, keepdims=True)
@@ -84,6 +88,40 @@ def refine_two_view(f1: np.ndarray, f2: np.ndarray,
         r2 = np.stack([np.einsum("ij,ij->i", d2, eu2), np.einsum("ij,ij->i", d2, ev2)], 1)
         return np.concatenate([r1.ravel(), r2.ravel()])
 
-    p0 = np.zeros(6 + 3 * n)                              # perturbation starts at 0
-    sol = least_squares(residual, p0, method="lm", max_nfev=max_nfev)
-    return unpack(sol.x)
+    def jacobian(state):
+        R, t, X = state
+        # View 1 (camera at identity) sees only X; view 2 sees R·exp(δω)·X + normalize(t+δt).
+        J = np.zeros((4 * n, 6 + 3 * n))
+        y1 = X
+        n1 = np.linalg.norm(y1, axis=1, keepdims=True)
+        d1 = y1 / n1
+        y2 = X @ R.T + t
+        n2 = np.linalg.norm(y2, axis=1, keepdims=True)
+        d2 = y2 / n2
+        Pt = np.eye(3) - np.outer(t, t)                  # ∂ normalize(t+δt)/∂δt at δt=0
+        for i in range(n):
+            E1 = np.stack([eu1[i], ev1[i]])              # (2,3)
+            P1 = (np.eye(3) - np.outer(d1[i], d1[i])) / n1[i, 0]
+            J[2 * i:2 * i + 2, 6 + 3 * i:9 + 3 * i] = E1 @ P1          # ∂r1/∂X_i
+
+            E2 = np.stack([eu2[i], ev2[i]])
+            P2 = (np.eye(3) - np.outer(d2[i], d2[i])) / n2[i, 0]
+            G = E2 @ P2                                  # (2,3): ∂r2/∂y2
+            row = 2 * n + 2 * i
+            J[row:row + 2, 0:3] = G @ (-R @ hat(X[i]))   # ∂r2/∂δω
+            J[row:row + 2, 3:6] = G @ Pt                 # ∂r2/∂δt
+            J[row:row + 2, 6 + 3 * i:9 + 3 * i] = G @ R  # ∂r2/∂X_i
+        return J
+
+    def retract(state, delta):
+        R, t, X = state
+        R = R @ so3_exp(delta[:3])
+        t = t + delta[3:6]
+        t = t / np.linalg.norm(t)
+        X = X + delta[6:].reshape(n, 3)
+        return (R, t, X)
+
+    out = lm_solve((R0, t0, X0), residual, jacobian, retract, block=2,
+                   max_iter=max_nfev, robust_kernel=robust_kernel,
+                   robust_scale=robust_scale)
+    return out.state
