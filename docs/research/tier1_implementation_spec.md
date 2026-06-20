@@ -166,7 +166,7 @@ No rectification, no homography — just `project` per hypothesis. Cost volume s
 
 ---
 
-## C5 · Angular reprojection residual for BA  🟩  `[F7]`
+## C5 · Angular reprojection residual for BA  🟩  `[F7]` — ✅ implemented (mvg/bundle.py)
 **Module:** extend `ds_msp/calib/`. Pixel reprojection error is **anisotropic** under heavy
 distortion; the principled wide-FOV error is **angular**.
 ```
@@ -183,7 +183,7 @@ Jacobian. Expose as `residual="pixel" | "angular" | "tangent"` in `calibrate`.
 
 ---
 
-## C6 · Spherical epipolar rectification (depth, teaching)  🟦→🟩  `[F5][F10]`
+## C6 · Spherical epipolar rectification  🟦→🟩  `[F5][F10]` — ✅ implemented (stereo/rectify.py)
 **Module:** `ds_msp/stereo/rectify_spherical.py`. Complements C4; cleaner pedagogically.
 - **Top-bottom rig** `[F10]`: rotate both cameras so the baseline aligns with the polar axis;
   resample both into ERP with pole-on-baseline → **epipolar great circles become vertical
