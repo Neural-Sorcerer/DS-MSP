@@ -4,7 +4,7 @@
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-171%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-174%20passing-brightgreen)
 
 A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) lenses — built around the
 **Double Sphere** model (Usenko et al. 2018) and a uniform multi-model layer, with analytic Jacobians,

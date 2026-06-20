@@ -6,9 +6,11 @@ imported lazily so this package stays importable without it.
 """
 
 from .bundle import calibrate
+from .stereo import estimate_relative_pose, relative_pose_error
 from .targets import AprilGridTarget
 
-__all__ = ["calibrate", "AprilGridTarget", "detect_aprilgrid"]
+__all__ = ["calibrate", "AprilGridTarget", "detect_aprilgrid",
+           "estimate_relative_pose", "relative_pose_error"]
 
 
 def __getattr__(name: str):
