@@ -9,20 +9,18 @@ This module defines:
 
 """
 
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 import json
 import numpy as np
 import cv2
 import os
-import sys
 from scipy.optimize import least_squares
 
 from ds_msp.model import ds_project, ds_project_jacobian, DoubleSphereCamera
 from ds_msp.utils import (
     pack_params,
     unpack_params,
-    build_checkerboard_points,
     load_coco_calibration,
 )
 

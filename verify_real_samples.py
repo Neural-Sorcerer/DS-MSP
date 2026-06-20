@@ -150,7 +150,8 @@ def main():
         # ---- montages ----
         def stack(a, b, lab_a, lab_b):
             a, b = a.copy(), b.copy()
-            label(a, lab_a); label(b, lab_b)
+            label(a, lab_a)
+            label(b, lab_b)
             return np.hstack([a, b])
 
         cv2.imwrite(os.path.join(OUT, f"{name}_1_undistort_model_vs_ldc.jpg"),

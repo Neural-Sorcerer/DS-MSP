@@ -1,12 +1,14 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "ds_msp"
 version = "0.2.0"
 description = "Double Sphere (and multi-model) fisheye camera library with model conversion"
-requires-python = ">=3.8"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
 dependencies = ["numpy", "opencv-python", "scipy", "pyyaml"]
 
 # Optional extras. `calib` adds the AprilGrid detector used to calibrate from real
@@ -30,10 +32,10 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py38"
+target-version = "py310"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 warn_unused_ignores = true
 # Tighten per-module as the typed surface grows; core/ is fully typed.
 [[tool.mypy.overrides]]
@@ -57,7 +59,6 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "services depend on contracts, not concrete models or each other"
-type = "forbidden"
-source_modules = ["ds_msp.ops", "ds_msp.adapt"]
-forbidden_modules = ["ds_msp.ops"]
+name = "service layers are mutually independent"
+type = "independence"
+modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib"]

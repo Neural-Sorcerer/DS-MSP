@@ -2,8 +2,7 @@ import argparse
 import numpy as np
 import cv2
 import os
-import matplotlib.pyplot as plt
-from ds_msp.model import DoubleSphereCamera, ds_project, ds_unproject
+from ds_msp.model import DoubleSphereCamera, ds_unproject
 
 def viz_fov_zones(args):
     """Visualize FOV zones (Green/Yellow/Red) on an image."""
@@ -79,7 +78,8 @@ def viz_undistort(args):
     """Demonstrate undistortion modes."""
     print(f"Undistorting {args.image}...")
     img = cv2.imread(args.image)
-    if img is None: return
+    if img is None:
+        return
     
     h, w = img.shape[:2]
     # Sample 11 params

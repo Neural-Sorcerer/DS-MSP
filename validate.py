@@ -17,12 +17,10 @@ import os
 import json
 import cv2
 import numpy as np
-from typing import Dict, List, Tuple
 
 from ds_msp.model import ds_project, ds_unproject
 from ds_msp.utils import (
     load_coco_calibration,
-    unpack_params,
     build_checkerboard_points,
 )
 
@@ -272,7 +270,6 @@ def validate_single_config(config_path: str):
         
         # Filter valid rays
         rays_valid = rays[valid_unproj]
-        uv_obs_valid = uv_obs[valid_unproj]
         Xw_valid = Xw[valid_unproj]
         
         if len(rays_valid) < 4:
@@ -300,7 +297,7 @@ def validate_single_config(config_path: str):
         valid_mask = valid_ds
         rms = compute_rms_error(uv_proj, uv_obs, valid_mask)
         
-        print(f"Pose Estimation Success.")
+        print("Pose Estimation Success.")
         print(f"Translation: {tvec.flatten()}")
         print(f"RMS Reprojection Error: {rms:.4f} px")
         

@@ -13,7 +13,7 @@ Imports: numpy only.
 
 from __future__ import annotations
 
-from typing import Dict, List, Mapping, Tuple
+from typing import List, Mapping, Tuple
 
 import numpy as np
 

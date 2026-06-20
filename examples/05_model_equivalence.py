@@ -93,21 +93,27 @@ def main() -> None:
         phis = np.linspace(0, 2 * np.pi, 60, endpoint=False)
         dirs = np.stack([np.sin(th) * np.cos(phis), np.sin(th) * np.sin(phis),
                          np.cos(th) * np.ones_like(phis)], axis=1)
-        ukb, vk = kb.project(dirs); uds, vd = ds.project(dirs)
+        ukb, vk = kb.project(dirs)
+        uds, vd = ds.project(dirs)
         ok = vk & vd
         if ok.sum() == 0:
-            print(f"     {deg:6d}     (no valid projection)"); continue
+            print(f"     {deg:6d}     (no valid projection)")
+            continue
         d = np.linalg.norm(ukb[ok] - uds[ok], axis=1)
         print(f"     {deg:6d}     {d.mean():8.4f}     {d.max():8.4f}")
 
     ys, xs = np.mgrid[8:H:16, 8:W:16]
     px = np.stack([xs.ravel(), ys.ravel()], axis=1).astype(float)
-    rk, ok1 = kb.unproject(px); rd, ok2 = ds.unproject(px); ok = ok1 & ok2
+    rk, ok1 = kb.unproject(px)
+    rd, ok2 = ds.unproject(px)
+    ok = ok1 & ok2
     ang = np.rad2deg(np.arccos(np.clip(np.sum(rk[ok] * rd[ok], axis=1), -1, 1)))
     print(f"\n  UNPROJECT — angle between KB-ray and DS-ray over {ok.sum()} pixels:")
     print(f"     median={np.median(ang):.4f}°   mean={ang.mean():.4f}°   max={ang.max():.4f}°")
     for nm, m in [("KB", kb), ("DS", ds)]:
-        r, a = m.unproject(px); b, a2 = m.project(r); g = a & a2
+        r, a = m.unproject(px)
+        b, a2 = m.project(r)
+        g = a & a2
         print(f"     {nm} self round-trip (project∘unproject): "
               f"max={np.linalg.norm(b[g] - px[g], axis=1).max():.1e} px")
 

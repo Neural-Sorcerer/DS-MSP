@@ -5,7 +5,6 @@ no fisheye model present.
 """
 
 import numpy as np
-import pytest
 
 from ds_msp.adapt import convert, sample_image_grid
 from ds_msp.testing import FakeModel

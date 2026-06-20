@@ -27,7 +27,6 @@ from __future__ import annotations
 import warnings
 from typing import Tuple
 
-import numpy as np
 import yaml
 
 from ..models.double_sphere import DoubleSphereModel
@@ -75,23 +74,23 @@ def from_kalibr_cam(block: dict):
     """Reconstruct a model from a Kalibr ``camN`` stanza (dict)."""
     cm = block["camera_model"]
     dm = block.get("distortion_model", "none")
-    I = [float(v) for v in block["intrinsics"]]
+    intr = [float(v) for v in block["intrinsics"]]
     D = [float(v) for v in block.get("distortion_coeffs", [])]
 
     if cm == "ds":
-        xi, alpha, fx, fy, cx, cy = I
+        xi, alpha, fx, fy, cx, cy = intr
         return DoubleSphereModel(fx, fy, cx, cy, xi, alpha)
     if cm == "eucm":
-        alpha, beta, fx, fy, cx, cy = I
+        alpha, beta, fx, fy, cx, cy = intr
         return EUCMModel(fx, fy, cx, cy, alpha, beta)
     if cm == "omni":
-        xi_mei, fx, fy, cx, cy = I
+        xi_mei, fx, fy, cx, cy = intr
         if dm not in ("none", None, ""):
             raise NotImplementedError("omni + distortion is not representable by UCMModel")
         alpha = xi_mei / (1.0 + xi_mei)
         return UCMModel(fx, fy, cx, cy, alpha)
     if cm == "pinhole":
-        fx, fy, cx, cy = I
+        fx, fy, cx, cy = intr
         if dm == "equidistant":
             k1, k2, k3, k4 = D
             return KannalaBrandtModel(fx, fy, cx, cy, k1, k2, k3, k4)
