@@ -4,12 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ds_msp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Double Sphere (and multi-model) fisheye camera library with model conversion"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+authors = [{ name = "Munna-Manoj" }]
+keywords = [
+    "fisheye", "camera-model", "calibration", "double-sphere",
+    "computer-vision", "slam", "opencv", "kannala-brandt",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Operating System :: OS Independent",
+]
 dependencies = ["numpy", "opencv-python", "scipy", "pyyaml"]
+
+[project.urls]
+Homepage = "https://github.com/Munna-Manoj/DS-MSP"
+Repository = "https://github.com/Munna-Manoj/DS-MSP"
+Issues = "https://github.com/Munna-Manoj/DS-MSP/issues"
 
 # Optional extras. `calib` adds the AprilGrid detector used to calibrate from real
 # board images (e.g. TUM-VI). Kept optional so the core library installs lean.
