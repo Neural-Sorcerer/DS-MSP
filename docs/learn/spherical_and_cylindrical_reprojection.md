@@ -161,6 +161,6 @@ representation is only ever as correct as the calibration it was warped from.
 
 ---
 
-*Built with the [Simulation Studio](../WRITING_GUIDE.md#5-figures-diagrams-and-visual-assets):
+*Built with the [Simulation Studio](../WRITING_GUIDE.md#5-make-it-visual):
 the morph's endpoint frames are asserted equal to the true single-model reprojections, so the
 animation can't drift from the library's geometry.*

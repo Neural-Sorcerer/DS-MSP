@@ -27,6 +27,7 @@ wide-FOV camera geometry.
 ## Table of contents
 
 - [Why DS-MSP](#why-ds-msp)
+- [See the geometry](#see-the-geometry)
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Repository map](#repository-map)
@@ -63,6 +64,31 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 | **Calibration** | Generic Levenberg–Marquardt bundle adjustment for *any* model, with a robust (Cauchy) loss option. |
 | **Ecosystem fluency** | Read/write **Kalibr** camchain YAML; OpenCV-style drop-in API; **TI Jacinto** LDC hardware mesh export. |
 | **Verified, CI-tested** | 171 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
+
+---
+
+## See the geometry
+
+A camera model is a recipe for turning 3D rays into pixels. Here the **Double Sphere** model
+runs on a synthetic scene — each world point traced through its two spheres onto the image
+plane to *form* the fisheye image, point by point. The render's geometry is cross-checked
+against the library itself (`std = 2e-16`), so the animation can't drift from the math:
+
+![Double Sphere image formation — 3D points projected through two spheres onto a fisheye image](assets/learn/double_sphere_pipeline.gif)
+
+And the image doesn't have to live on a flat plane. Because a fisheye is fundamentally a map
+from **rays** to pixels, those rays can be stored equally on a **sphere**, a **cylinder**, or a
+**pinhole** plane — and you can convert pixels between the three with exact, invertible math
+(round-trips to **1e-13 px**). The sphere is the *complete* model; the flat pinhole is the
+awkward special case that can't hold a >180° view. Watch one real fisheye morph through all three:
+
+![One real fisheye morphing through sphere, cylinder, and pinhole representations](assets/learn/sphere_cylinder_pinhole_morph.gif)
+
+> *Verticals stay straight on the cylinder; the pinhole keeps lines straight but balloons the
+> periphery and drops the polar cone to black — the >180° geometry has nowhere to land on a plane.*
+> Full derivation and the pixel↔pixel formulas:
+> **[sphere/cylinder/pinhole deep-dive](docs/learn/spherical_and_cylindrical_reprojection.md)**
+> (`examples/08`). The 3D pipeline above is built in the [Simulation Studio](docs/WRITING_GUIDE.md#5-make-it-visual).
 
 ---
 
@@ -125,7 +151,7 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 | Path | Contents |
 | :-- | :-- |
 | [`ds_msp/`](ds_msp) | The library: `core/` contracts → pure math → `models/` → services (`ops/`, `adapt/`, `io/`, `calib/`), plus `cv.py` (OpenCV-style API) and `ldc.py` (hardware export). |
-| [`examples/`](examples) | Five runnable demos on real TUM-VI data (`01`–`05`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence. |
+| [`examples/`](examples) | Eight runnable demos on real data (`01`–`08`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence, stereo extrinsics, the >180° validity cone, and sphere/cylinder/pinhole reprojection. |
 | [`docs/learn/`](docs/learn/README.md) | The guided curriculum (start here to learn). |
 | [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md), [`WRITING_GUIDE.md`](docs/WRITING_GUIDE.md) (docs style guide). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
@@ -160,6 +186,7 @@ track teaches it on real public data — every chapter prints a number you can v
 | 🏆 | [**Capstone: calibrate a real camera**](docs/learn/capstone_calibrating_a_real_camera.md) | detect AprilGrid corners, bundle-adjust, and **match TUM-VI's published intrinsics to ~1 %** |
 | 🔬 | [Robust losses & evaluation](docs/learn/robust_losses_and_evaluation.md) | handle outliers without discarding data; why median/inlier RMS beat naive RMS |
 | 🔬 | [Are two models the same camera?](docs/learn/are_two_models_the_same_camera.md) | prove DS `fx≈152` and KB `fx≈191` describe the same lens |
+| 🔬 | [Sphere, cylinder & pinhole reprojection](docs/learn/spherical_and_cylindrical_reprojection.md) | move one fisheye between a sphere, cylinder, and pinhole image — exact pixel maps, verified to 1e-13 px |
 
 ---
 
