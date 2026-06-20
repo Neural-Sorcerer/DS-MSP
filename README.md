@@ -10,6 +10,11 @@ A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) len
 calibration, model conversion, and hardware export. It doubles as a **guided, runnable course** in
 wide-FOV camera geometry.
 
+![Fisheye rectification demo](assets/undistort_demo.gif)
+
+> *A real fisheye frame (left) rectified to a pinhole view (right), sweeping the `balance` knob from
+> widest-FOV to tightest-crop. The bent ceiling lines and curved checkerboard straighten out.*
+
 > **Two ways in — pick yours:**
 > - 🎓 **Learn the geometry** → start the runnable curriculum in **[`docs/learn/`](docs/learn/README.md)**.
 >   Each chapter prints a number you can verify; the **[🏆 capstone](docs/learn/capstone_calibrating_a_real_camera.md)**
