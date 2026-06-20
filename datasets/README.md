@@ -49,6 +49,8 @@ datasets/
 ```
 
 Re-fetch anytime: `bash scripts/download_datasets.sh [all|tumvi|tumrgbd|euroc]` (resumable).
+`tumvi` and `tumrgbd` download directly; **`euroc` only *extracts* a bundle you downloaded
+manually** (see §4.2 — EuRoC has no scriptable URL).
 
 ---
 
@@ -66,12 +68,12 @@ Find your goal, grab **only** the sub-part it needs.
 | **Tier 1** multi-camera extrinsics | TUM-VI calib-cam1 (**cam0 + cam1**) → vs `T_cn_cnm1` | `tumvi/dataset-calib-cam1_512_16/mav0/{cam0,cam1}/` | `… tumvi` | *(roadmap — Tier 1)* |
 | **Tier 1** camera–IMU calibration | TUM-VI calib-imu1 (cam + **imu0**) → vs `T_cam_imu` | `tumvi/dataset-calib-imu1_512_16/mav0/` | `… tumvi` | *(roadmap — Tier 1)* |
 | **Tier 1** fisheye stereo → depth | TUM-VI room1 (**cam0 + cam1** pairs) | `tumvi/dataset-room1_512_16/mav0/{cam0,cam1}/` | `… tumvi` | *(roadmap — Tier 1)* |
-| **Tier 2** monocular VO + ATE/RPE | EuRoC V1_01 (**cam0** + GT) *or* TUM-VI room1 (cam0 + mocap0) | `euroc/V1_01_easy/mav0/` | `… euroc`† | *(roadmap — Tier 2)* |
+| **Tier 2** monocular VO + ATE/RPE | EuRoC V1_01 (**cam0** + GT) *or* TUM-VI room1 (cam0 + mocap0) | `euroc/V1_01_easy/mav0/` | manual† | *(roadmap — Tier 2)* |
 | **Tier 4** metric fisheye depth | TUM RGB-D fr1 (**rgb + depth + GT**) | `tumrgbd/rgbd_dataset_freiburg1_xyz/` | `… tumrgbd` | *(roadmap — Tier 4)* |
-| **Tier 4** SuperPoint VO | EuRoC V1_01 (cam0) | `euroc/V1_01_easy/mav0/cam0/` | `… euroc`† | *(roadmap — Tier 4)* |
+| **Tier 4** SuperPoint VO | EuRoC V1_01 (cam0) | `euroc/V1_01_easy/mav0/cam0/` | manual† | *(roadmap — Tier 4)* |
 
-`… X` is shorthand for `bash scripts/download_datasets.sh X`. †EuRoC needs a one-time link
-(see §4.2).
+`… X` is shorthand for `bash scripts/download_datasets.sh X`. **†EuRoC cannot be scripted** —
+it's a manual browser download (the script only *extracts* it). See §4.2.
 
 ---
 
@@ -111,14 +113,19 @@ robustness cases.
   radtan coeffs → validate the `RadTanModel`. `mav0/cam1/sensor.yaml` + the `T_BS` blocks give
   stereo extrinsics.
 - **Ground truth:** `mav0/state_groundtruth_estimate0/data.csv` — the trajectory for ATE/RPE.
-- **Download:** EuRoC moved to the ETH Research Collection, which serves a **browser/JS bundle**
-  (no scriptable URL). Open the EuRoC page, right-click **"Vicon Room 1 Datasets"** → *Copy
-  link*, then:
-  ```bash
-  EUROC_VR1='<pasted-url>' bash scripts/download_datasets.sh euroc
-  ```
-  (Only the ASL `.zip` sequences are kept; the ROS1 `.bag` files are discarded to stay under
-  budget.)
+- **⚠️ EuRoC is a MANUAL, browser-only download — no script can fetch it.** The legacy direct
+  host (`robotics.ethz.ch/~asl-datasets`) is **offline**, and the current host (the **ETH
+  Research Collection**) serves a browser/JS bundle with no stable URL that `curl`/`wget` can
+  use. So you download it by hand, then let the script unpack it:
+  1. Open the **EuRoC MAV** page on the ETH Research Collection (search
+     *"EuRoC MAV dataset research-collection.ethz.ch"*).
+  2. In a browser, download the **"Vicon Room 1 Datasets"** ZIP (~5.8 GB).
+  3. Move it to `datasets/euroc/vicon_room1.zip`.
+  4. Run `bash scripts/download_datasets.sh euroc` — it **extracts** the bundle (which nests a
+     `.zip` and a `.bag` per sequence), unpacks the ASL `.zip`s into `datasets/euroc/V1_0x_*/`,
+     and you can delete the `.bag`s and the outer ZIP afterward to reclaim space.
+  > Already have `datasets/euroc/V1_0x_*/mav0/`? Then you're done — that *is* the manually
+  > downloaded data, already unpacked. Nothing to re-download.
 
 ### 4.3 TUM RGB-D — `freiburg1_xyz` *(RGB + depth + GT, ~0.46 GB)*
 `tumrgbd/rgbd_dataset_freiburg1_xyz/`: 798 RGB + 798 aligned depth frames + `groundtruth.txt`.
