@@ -88,10 +88,15 @@ the 5-point minimal solver (no OpenGV/PoseLib installed) — RANSAC currently sa
 
 ---
 
-## C3 · Chart library (reprojection front-ends)  🟩  `[F1][F2][F3][F4]`
-**Module:** `ds_msp/ops/reproject.py` — lift the verified sphere/cylinder/pinhole maps out of
-`examples/08`, then add charts. Every chart is a `pixel→ray` map fed to `project` + `cv2.remap`
-(the existing undistortion pattern), returning `(mapx, mapy, valid_mask)`.
+## C3 · Chart library (reprojection front-ends)  🟩  `[F1][F2][F3][F4]` — ✅ **implemented**
+**Module:** `ds_msp/ops/reproject.py` — `Chart` base + `Equirectangular`, `Cylindrical`,
+`Pinhole`, `TangentImage` (gnomonic patch), `cubemap_charts` (6 guard-banded faces), and
+`reproject_maps` / `reproject_image` (chart `pixel_to_ray` → `cam.project` → `cv2.remap`,
+returning a `valid` mask). Round-trips `pixel→ray→pixel` to <1e-9 px, cubemap tiles the full
+sphere, verified end-to-end on `DoubleSphereModel` (`tests/ops/test_reproject.py`, 9 tests).
+Charts are pure functions of `cam` (no stored intrinsics) — chart-agnostic, honouring the killed
+"no canonical chart" assumption. *Follow-up:* point `examples/08` at this module; tangent-patch
+icosahedron layout + fusion is C7. Original notes below.
 
 ### C3.1 Existing (already verified to 1e-13 px round-trip) — lift to library
 Equirectangular `[F2]`, cylindrical, rectilinear/pinhole `[F1]`. API mirrors `compute_K_new`:
