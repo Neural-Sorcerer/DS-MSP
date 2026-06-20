@@ -16,7 +16,8 @@ import numpy as np
 
 from ..core.lie import hat, so3_exp
 from ..core.optimize import lm_solve
-from .two_view import _as_rays
+from .ransac import ransac_relative_pose
+from .two_view import _as_rays, triangulate_rays
 
 
 def _tangent_basis(f: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -125,3 +126,32 @@ def refine_two_view(f1: np.ndarray, f2: np.ndarray,
                    max_iter=max_nfev, robust_kernel=robust_kernel,
                    robust_scale=robust_scale)
     return out.state
+
+
+def estimate_relative_pose(f1: np.ndarray, f2: np.ndarray, *,
+                           threshold: float = 0.005, max_iters: int = 1000, seed: int = 0,
+                           refine: bool = True, robust_kernel: str = "none",
+                           robust_scale: float | str = "auto"):
+    """End-to-end **robust** two-view relative pose from ray correspondences.
+
+    Ties the C2 + C5 pieces into one call: RANSAC consensus over the eight-point gives an
+    outlier-free inlier set and a well-conditioned initial ``(R₀, t₀)`` (a far better seed than a
+    single least-squares eight-point on contaminated data, especially at large rotation where one
+    bad ray skews the essential matrix); the inliers are triangulated and handed to the
+    manifold-correct :func:`refine_two_view` for a final geometric (angular) bundle adjustment.
+
+    ``robust_kernel`` lets the refinement *additionally* down-weight any soft mismatches that
+    slipped under the RANSAC threshold. Returns ``(R, t, X, inliers)`` — pose, triangulated points
+    (camera-1 frame, inliers only), and the boolean inlier mask over the input correspondences.
+    """
+    f1, f2 = _as_rays(f1), _as_rays(f2)
+    R0, t0, inliers = ransac_relative_pose(f1, f2, threshold=threshold,
+                                           max_iters=max_iters, seed=seed)
+    fin1, fin2 = f1[inliers], f2[inliers]
+    X0, _, _ = triangulate_rays(fin1, fin2, R0, t0)
+    if refine:
+        R, t, X = refine_two_view(fin1, fin2, R0, t0, X0,
+                                  robust_kernel=robust_kernel, robust_scale=robust_scale)
+    else:
+        R, t, X = R0, t0, X0
+    return R, t, X, inliers

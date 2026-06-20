@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ds_msp.mvg import recover_pose
+from ds_msp.mvg import estimate_relative_pose, recover_pose
 from ds_msp.mvg.bundle import angular_reprojection_error, refine_two_view
 
 
@@ -86,3 +86,46 @@ def test_refinement_improves_pose_accuracy_on_average():
         pose_lin.append(_rot_err_deg(R, R0))
         pose_ref.append(_rot_err_deg(R, Rr))
     assert np.mean(pose_ref) <= np.mean(pose_lin) + 1e-9   # refinement never worse on average
+
+
+def _contaminate(f1, f2, frac, seed):
+    """Replace a fraction of f2 rays with random directions (gross correspondence outliers)."""
+    rng = np.random.default_rng(seed)
+    f2 = f2.copy()
+    k = int(frac * len(f2))
+    idx = rng.choice(len(f2), k, replace=False)
+    rnd = rng.standard_normal((k, 3))
+    f2[idx] = rnd / np.linalg.norm(rnd, axis=1, keepdims=True)
+    return f2
+
+
+def test_estimate_relative_pose_is_robust_to_outliers():
+    """The end-to-end estimator (RANSAC consensus → triangulate → manifold refine) must stay
+    sub-degree under 25% gross correspondence outliers, where naive recover_pose+refine — which
+    feeds every contaminated ray into the least-squares eight-point — blows up by tens of degrees."""
+    errs_naive, errs_robust = [], []
+    for s in range(8):
+        f1, f2, R, t = _scene(n=100, seed=s, noise=2e-3)
+        f2c = _contaminate(f1, f2, 0.25, seed=s + 100)
+        R0, t0, X0 = recover_pose(f1, f2c)
+        Rn, _, _ = refine_two_view(f1, f2c, R0, t0, X0)
+        errs_naive.append(_rot_err_deg(R, Rn))
+        Rr, _, _, inl = estimate_relative_pose(f1, f2c, threshold=0.01, seed=s)
+        errs_robust.append(_rot_err_deg(R, Rr))
+
+    assert np.mean(errs_robust) < 1.5                       # robust path stays accurate
+    assert np.mean(errs_robust) < 0.2 * np.mean(errs_naive)  # and dramatically beats naive
+
+
+def test_estimate_relative_pose_stays_accurate_on_clean_data():
+    """No outliers: the RANSAC wrapper must not hurt. It keeps essentially all rays as inliers and
+    stays sub-degree on average. (RANSAC is outlier *insurance*, not an accuracy upgrade on clean
+    data — a minimal-sample essential matrix can even be a touch noisier on any single draw — so we
+    average over seeds rather than assert a single lucky run.)"""
+    errs = []
+    for s in range(6):
+        f1, f2, R, t = _scene(n=80, seed=s, noise=2e-3)
+        Rr, tr, Xr, inl = estimate_relative_pose(f1, f2, threshold=0.01, seed=s)
+        assert inl.sum() >= 65                              # nearly all rays are inliers
+        errs.append(_rot_err_deg(R, Rr))
+    assert np.mean(errs) < 0.5

@@ -10,7 +10,11 @@ This layer is pure NumPy and model-agnostic: feed it rays, get relative pose and
 See ``docs/research/tier1_implementation_spec.md`` (unit C1).
 """
 
-from .bundle import angular_reprojection_error, refine_two_view
+from .bundle import (
+    angular_reprojection_error,
+    estimate_relative_pose,
+    refine_two_view,
+)
 from .ransac import ransac_relative_pose, sampson_residual
 from .two_view import (
     decompose_essential,
@@ -31,5 +35,6 @@ __all__ = [
     "ransac_relative_pose",
     "sampson_residual",
     "refine_two_view",
+    "estimate_relative_pose",
     "angular_reprojection_error",
 ]
