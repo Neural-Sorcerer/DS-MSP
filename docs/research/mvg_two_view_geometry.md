@@ -156,10 +156,21 @@ rays to $\sim0°$.
   or ensure non-degenerate 3D coverage — the same "the data must exercise the geometry" lesson as
   the [calibration FOV-coverage](../learn/are_two_models_the_same_camera.md) point.
 
+## Manifold-correct refinement (C5 / Phase 1)
+
+The nonlinear refinement (`mvg.refine_two_view`) and the calibration bundle do **not** optimize an
+absolute axis-angle vector (biased >30°, singular at `‖r‖=π`). They optimize a **local
+perturbation** retracted through the exponential map, `R ← R₀·Exp([δω]_×)` with `δω` starting at
+`0`, using the SO(3) `exp`/`log` and **right Jacobian** in [`ds_msp/core/lie.py`]
+(`∂(Exp(w)v)/∂w = -Exp(w)[v]_× J_r(w)`, verified by finite difference). The calibrator's analytic
+extrinsic Jacobian is then `∂Xc/∂δω = -R[Xw]_× J_r(δω)`. This is the manifold half of the
+[DS-MSP ↔ diffpnp symbiosis](diffpnp_dsmsp_symbiosis.md) (Phase 1) — same numbers in benign
+regimes, stable at large rotation.
+
 ## What this unlocks
 
 Relative pose + triangulation on rays is the front end of **Structure-from-Motion**: chain
-two-view poses, triangulate a point cloud, and refine by bundle adjustment with the **angular
-reprojection residual** (spec unit C5) — all without ever flattening the fisheye to a pinhole.
-The robust wrapper (RANSAC + spherical normalization) is **C2**; see the
+two-view poses, triangulate a point cloud, and refine by manifold bundle adjustment with the
+**angular reprojection residual** (spec unit C5) — all without ever flattening the fisheye to a
+pinhole. The robust wrapper (RANSAC + spherical normalization) is **C2**; see the
 [Tier-1 spec](tier1_implementation_spec.md).

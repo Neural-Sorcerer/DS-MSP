@@ -19,6 +19,16 @@ import numpy as np
 from scipy.optimize import least_squares
 
 from ..core.contracts import CameraModel
+from ..core.lie import so3_exp, so3_right_jacobian
+
+
+def _skew_batch(V: np.ndarray) -> np.ndarray:
+    """Stack of skew-symmetric matrices ``[Vₙ]_×``, shape ``(N, 3, 3)``."""
+    K = np.zeros((V.shape[0], 3, 3))
+    K[:, 0, 1], K[:, 0, 2] = -V[:, 2], V[:, 1]
+    K[:, 1, 0], K[:, 1, 2] = V[:, 2], -V[:, 0]
+    K[:, 2, 0], K[:, 2, 1] = -V[:, 1], V[:, 0]
+    return K
 
 
 def _seed_poses(init_model, X_world_list, keypoints_list, visibility_list):
@@ -70,8 +80,12 @@ def calibrate(init_model: CameraModel,
     sizes = [len(X) for X in X_world_list]
 
     rvecs, tvecs = _seed_poses(init_model, X_world_list, keypoints_list, visibility_list)
+    # Manifold-correct extrinsics: keep each seed rotation as a base matrix and optimize a *local*
+    # perturbation δω (retracted via R_base·exp([δω]_×)) instead of an absolute axis-angle vector.
+    # δω starts at 0 and stays small for a good seed, so it never nears the ‖r‖=π singularity.
+    R_bases = [cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs]
     x0 = np.concatenate([init_model.params]
-                        + [np.concatenate([r, t]) for r, t in zip(rvecs, tvecs)])
+                        + [np.concatenate([np.zeros(3), t]) for t in tvecs])
 
     lb_i, ub_i = cls.param_bounds()
     ext_lb = np.array([-np.pi, -np.pi, -np.pi, -10.0, -10.0, 1e-3])
@@ -84,10 +98,10 @@ def calibrate(init_model: CameraModel,
         m = cls.from_params(p[:P])
         out = []
         off = P
-        for Xw, uv, vis in zip(X_world_list, keypoints_list, visibility_list):
-            r, t = p[off:off + 3], p[off + 3:off + 6]
+        for i, (Xw, uv, vis) in enumerate(zip(X_world_list, keypoints_list, visibility_list)):
+            dw, t = p[off:off + 3], p[off + 3:off + 6]
             off += 6
-            R, _ = cv2.Rodrigues(r)
+            R = R_bases[i] @ so3_exp(dw)
             Xc = (R @ Xw.T).T + t
             uvp, valid = m.project(Xc)
             diff = np.zeros_like(uv, dtype=np.float64)
@@ -102,16 +116,16 @@ def calibrate(init_model: CameraModel,
         row = 0
         off = P
         for i, (Xw, uv, vis) in enumerate(zip(X_world_list, keypoints_list, visibility_list)):
-            r = p[off:off + 3]
+            dw = p[off:off + 3]
             t = p[off + 3:off + 6]
             off += 6
-            R, jacR = cv2.Rodrigues(r)
+            R = R_bases[i] @ so3_exp(dw)
             Xc = (R @ Xw.T).T + t
             _, J_point, J_param, valid = m.project_jacobian(Xc)
             mask = (vis & valid)[:, None, None].astype(np.float64)
-            dR = jacR.T.reshape(3, 3, 3)
-            dXc_dr = np.einsum('abc,nb->nac', dR, Xw)
-            J_rvec = np.einsum('nij,njc->nic', J_point, dXc_dr)
+            # ∂Xc/∂δω = -R [Xw]_× J_r(δω)  (right-perturbation Jacobian of the retraction)
+            dXc_dw = -np.einsum('ij,njk,kl->nil', R, _skew_batch(Xw), so3_right_jacobian(dw))
+            J_rvec = np.einsum('nij,njc->nic', J_point, dXc_dw)
             J_ext = np.concatenate([J_rvec, J_point], axis=-1) * mask
             J_par = J_param * mask
             N = sizes[i]
@@ -126,18 +140,21 @@ def calibrate(init_model: CameraModel,
                         loss=loss, f_scale=f_scale)
 
     model = cls.from_params(res.x[:P])
-    poses = [(res.x[P + 6 * i:P + 6 * i + 3], res.x[P + 6 * i + 3:P + 6 * i + 6])
-             for i in range(n_img)]
+    # Convert each optimized perturbation back to an absolute (rvec, tvec) so the returned poses
+    # match the original interface (downstream code does cv2.Rodrigues(rvec)).
+    poses = []
+    for i in range(n_img):
+        dw = res.x[P + 6 * i:P + 6 * i + 3]
+        t = res.x[P + 6 * i + 3:P + 6 * i + 6]
+        R = R_bases[i] @ so3_exp(dw)
+        poses.append((cv2.Rodrigues(R)[0].ravel(), np.asarray(t, float)))
 
     # True reprojection RMS over valid observations. Computed directly (not from
     # res.cost) so it means the same thing under any robust ``loss``: a robust
     # kernel reshapes the cost, but the pixel error of the fit is what we report.
     sq, n = 0.0, 0
-    off = P
-    for Xw, uv, vis in zip(X_world_list, keypoints_list, visibility_list):
-        r, t = res.x[off:off + 3], res.x[off + 3:off + 6]
-        off += 6
-        R, _ = cv2.Rodrigues(r)
+    for (rvec, t), Xw, uv, vis in zip(poses, X_world_list, keypoints_list, visibility_list):
+        R, _ = cv2.Rodrigues(rvec)
         uvp, valid = model.project((R @ Xw.T).T + t)
         m = vis & valid
         d = uvp[m] - uv[m]

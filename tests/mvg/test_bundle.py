@@ -48,6 +48,35 @@ def test_refinement_reduces_angular_reprojection_error():
     assert after < before                                  # nonlinear refinement tightens the fit
 
 
+def test_refinement_is_stable_at_large_rotation():
+    """A ~165° rotation puts an absolute axis-angle near the ‖r‖=π singularity; the manifold
+    perturbation (δω from 0) stays well-conditioned, so refinement still converges."""
+    rng = np.random.default_rng(11)
+    axis = rng.standard_normal(3)
+    axis /= np.linalg.norm(axis)
+    R = _rot(axis, np.radians(165))
+    t = rng.standard_normal(3)
+    t = t / np.linalg.norm(t)
+    X1 = np.column_stack([rng.uniform(-2, 2, 60), rng.uniform(-2, 2, 60), rng.uniform(2, 8, 60)])
+    X2 = (R @ X1.T).T + t
+    keep = X2[:, 2] > 0.1
+    X1, X2 = X1[keep], X2[keep]
+    f1 = X1 / np.linalg.norm(X1, axis=1, keepdims=True)
+    f2 = X2 / np.linalg.norm(X2, axis=1, keepdims=True)
+    f1 += 2e-3 * rng.standard_normal(f1.shape)
+    f2 += 2e-3 * rng.standard_normal(f2.shape)
+    f1 /= np.linalg.norm(f1, axis=1, keepdims=True)
+    f2 /= np.linalg.norm(f2, axis=1, keepdims=True)
+
+    R0, t0, X0 = recover_pose(f1, f2)
+    seed_err = _rot_err_deg(R, R0)
+    Rr, tr, Xr = refine_two_view(f1, f2, R0, t0, X0)
+    # the manifold step stays well-conditioned at large rotation: it converges the residual and
+    # does not diverge (an absolute-axis-angle param near ‖r‖=π would stall here).
+    assert angular_reprojection_error(f1, f2, Rr, tr, Xr).mean() < 0.1
+    assert _rot_err_deg(R, Rr) <= seed_err + 1e-9
+
+
 def test_refinement_improves_pose_accuracy_on_average():
     pose_lin, pose_ref = [], []
     for s in range(8):

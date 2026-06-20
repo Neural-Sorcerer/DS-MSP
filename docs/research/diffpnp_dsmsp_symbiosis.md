@@ -107,9 +107,14 @@ diffpnp."*
 
 - **Phase 0 — shared spec (cheap).** A one-page *camera-model contract* both implement (the
   intersection of DS-MSP's `CameraModel` and diffpnp's projection seam) + this analysis. Done here.
-- **Phase 1 — DS-MSP goes manifold-correct (NumPy, no torch).** `ds_msp/mvg/lie.py` + manifold
-  step in `refine_two_view` (C5) and `calib/bundle.py`. Call it **"C5.5"**. Verify: identical
-  results in benign regimes, strictly better near large rotations / `‖r‖→π`. *Answers the Lie gap.*
+- **Phase 1 — DS-MSP goes manifold-correct (NumPy, no torch). ✅ DONE.** `ds_msp/core/lie.py`
+  (so3/se3 `exp`/`log`, right Jacobian — verified vs cv2 + the right-Jacobian identity by finite
+  difference) is now used by both `mvg.refine_two_view` (C5) and `calib/bundle.py`: each optimizes
+  a **local perturbation** `R ← R_base·exp([δω]_×)` from `δω=0` instead of a flat absolute
+  axis-angle, with the analytic right-perturbation Jacobian `∂Xc/∂δω = -R[Xw]_× J_r(δω)` in the
+  calibrator. **No regression** — the capstone still matches TUM-VI to 0.0 % focal / 0.04 px
+  principal / 0.081 px median — and `refine_two_view` now stays well-conditioned at large rotations
+  (a ~165° scene where flat axis-angle nears the `‖r‖=π` singularity). *Answers the Lie gap.*
 - **Phase 2 — diffpnp goes multi-camera (torch).** Projection protocol + **Double Sphere** backend
   (port DS-MSP's verified math) + ray-based init + ray cheirality. `PnPLayer(projection=…)`.
   Cross-test against DS-MSP (harness check #1).

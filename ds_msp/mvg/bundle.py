@@ -15,27 +15,8 @@ from typing import Tuple
 import numpy as np
 from scipy.optimize import least_squares
 
+from ..core.lie import so3_exp
 from .two_view import _as_rays
-
-
-def _rodrigues(r: np.ndarray) -> np.ndarray:
-    """Axis-angle vector → rotation matrix (no cv2)."""
-    theta = np.linalg.norm(r)
-    if theta < 1e-12:
-        return np.eye(3)
-    k = r / theta
-    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
-    return np.eye(3) + np.sin(theta) * K + (1 - np.cos(theta)) * (K @ K)
-
-
-def _log_rotation(R: np.ndarray) -> np.ndarray:
-    """Rotation matrix → axis-angle vector."""
-    c = np.clip((np.trace(R) - 1) / 2, -1, 1)
-    theta = np.arccos(c)
-    if theta < 1e-9:
-        return np.zeros(3)
-    w = np.array([R[2, 1] - R[1, 2], R[0, 2] - R[2, 0], R[1, 0] - R[0, 1]])
-    return theta / (2 * np.sin(theta)) * w
 
 
 def _tangent_basis(f: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -72,20 +53,26 @@ def refine_two_view(f1: np.ndarray, f2: np.ndarray,
                     max_nfev: int = 100) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Nonlinear refinement of ``(R, t, X)`` minimizing the tangent-plane angular residual.
 
-    Camera 1 is fixed at the identity (the reference frame) and ``t`` is kept unit-length, which
-    pins the 7-DOF similarity gauge (the angular error is scale-invariant). Returns the refined
-    ``(R, t, X)``.
+    **Manifold-correct.** The rotation update is a *local perturbation* retracted through the
+    exponential map, ``R = R₀ · exp([δω]_×)`` with ``δω`` optimized from ``0`` — so it never goes
+    near the ``‖r‖ = π`` axis-angle singularity, unlike optimizing an absolute axis-angle vector.
+    Camera 1 is fixed at the identity (reference frame) and ``t`` is kept unit-length, pinning the
+    7-DOF similarity gauge (the angular error is scale-invariant). Returns the refined ``(R, t, X)``.
     """
     f1, f2 = _as_rays(f1), _as_rays(f2)
     n = f1.shape[0]
     eu1, ev1 = _tangent_basis(f1)
     eu2, ev2 = _tangent_basis(f2)
+    R0 = np.asarray(R0, float)
+    t0 = np.asarray(t0, float).reshape(3)
+    t0 = t0 / np.linalg.norm(t0)
+    X0 = np.asarray(X0, float)
 
     def unpack(p):
-        R = _rodrigues(p[:3])
-        t = p[3:6]
+        R = R0 @ so3_exp(p[:3])                          # retract: base ∘ exp(δω)
+        t = t0 + p[3:6]
         t = t / np.linalg.norm(t)
-        X = p[6:].reshape(n, 3)
+        X = X0 + p[6:].reshape(n, 3)
         return R, t, X
 
     def residual(p):
@@ -97,8 +84,6 @@ def refine_two_view(f1: np.ndarray, f2: np.ndarray,
         r2 = np.stack([np.einsum("ij,ij->i", d2, eu2), np.einsum("ij,ij->i", d2, ev2)], 1)
         return np.concatenate([r1.ravel(), r2.ravel()])
 
-    t0 = np.asarray(t0, float).reshape(3)
-    t0 = t0 / np.linalg.norm(t0)
-    p0 = np.concatenate([_log_rotation(np.asarray(R0, float)), t0, np.asarray(X0, float).ravel()])
+    p0 = np.zeros(6 + 3 * n)                              # perturbation starts at 0
     sol = least_squares(residual, p0, method="lm", max_nfev=max_nfev)
     return unpack(sol.x)
