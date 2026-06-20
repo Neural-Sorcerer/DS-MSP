@@ -35,3 +35,6 @@ CAREER_ROADMAP.md
 # RULE: the studio generates visual assets; only its OUTPUT (copied into assets/)
 # lands here. The generator code and its deps stay out of GitHub entirely.
 /simulations/
+
+# Local detection/repro experiments (use datasets, not shipped).
+/experiments/

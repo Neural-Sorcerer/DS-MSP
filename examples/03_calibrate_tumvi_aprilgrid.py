@@ -141,7 +141,8 @@ def main() -> None:
 
     print("\nThat is the capstone: a fisheye camera calibrated end-to-end from raw")
     print("footage — detect, correspond, bundle-adjust — landing on the published")
-    print("numbers. ~0.1 px median reprojection and ~1% focal agreement are the proof.")
+    print("numbers. ~0.1 px median reprojection and sub-0.1% focal agreement are the proof")
+    print("(multi-scale detection recovers the wide-FOV corners that pin the distortion).")
 
 
 if __name__ == "__main__":
