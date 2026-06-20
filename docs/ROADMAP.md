@@ -50,6 +50,43 @@ the public datasets already wired up:
 - **Inference-only modern-3D demos**: learned features (SuperPoint/LightGlue) in the VO
   loop; monocular metric depth metrically corrected by the fisheye calibration.
 
+## Tier 1 — representation-aware 3D: stereo · SfM · reconstruction
+**Research-driven.** This tier is scoped from a verified deep-research study of how image-domain
+charts (pinhole / equirectangular / cubemap / tangent) are used across 3D tasks — see the
+[findings record](research/representations_for_3d_tasks_findings.md) (24/25 claims passed 3-vote
+adversarial verification) and the [implementation spec](research/tier1_implementation_spec.md)
+(`C1`–`C9`: each with math, algorithm, verification number, and target module). The thread tying
+it together: **a fisheye measures rays, so the wide-FOV 3D stack is built on `project` /
+`unproject`, not on a pinhole detour** — epipolar lines become curves, disparity becomes angular,
+and the essential matrix still holds on **unit bearing vectors**.
+
+Builds on the verified pixel↔ray reprojection already shipped
+([deep-dive](learn/spherical_and_cylindrical_reprojection.md), `examples/08`).
+
+**Core library capability** 🟩 (in recommended PR order):
+- **`C1`+`C2` — two-view geometry on rays** (`ds_msp/mvg/`): essential matrix via 8-point on
+  bearing vectors (+ spherical 360-8PA normalization), 5-point relative pose, pose recovery with
+  **ray cheirality**, ray triangulation, and on-sphere (angular) RANSAC. *Highest leverage* — pure
+  math on existing `unproject`; the foundation for SfM. Verify: noise-free `R,t` recovery to
+  `<1e-6°`, `f₂ᵀEf₁ < 1e-10`.
+- **`C3` — chart library** (`ds_msp/ops/reproject.py`): lift the example-08 maps into the library,
+  add **cubemap** + **tangent-image (gnomonic)** charts with valid masks, seam/pole handling, and
+  FOV-aware auto-intrinsics. Verify: round-trip `<1e-12 px` per chart.
+- **`C4` — sphere-sweep stereo** (`ds_msp/stereo/`): depth directly on calibrated fisheye, **no
+  rectification** (avoids ERP's position-dependent disparity). Verify: `<1%` depth on synthetic.
+- **`C5` — angular / tangent-plane BA residual** (`ds_msp/calib/`): the principled wide-FOV
+  reprojection error, alongside the current pixel residual.
+
+**Research / nice-to-have** 🟦:
+- **`C6`** spherical epipolar rectification (top-bottom vertical-meridian rig) — also a clean
+  teaching artifact.
+- **`C7`** multi-chart MVS depth fusion · **`C8`** optical-flow ERP dense reconstruction ·
+  **`C9`** ecosystem interop (COLMAP / openMVG / OpenMVS export).
+
+**Killed assumption to honor:** there is *no* canonical spherical chart — keep everything
+chart-agnostic, keyed off `project` / `unproject`. Each unit lands with its verification number
+and a `docs/learn/` chapter, per the design rules below.
+
 ## Design rules (so the two goals stay aligned)
 - Every new capability ships with a test that **proves a number**, not a screenshot.
 - Teaching verbosity goes in `docs/`/`examples/`, never in `ds_msp/`.
