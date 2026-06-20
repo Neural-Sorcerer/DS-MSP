@@ -27,6 +27,7 @@ from __future__ import annotations
 import warnings
 from typing import Tuple
 
+import numpy as np
 import yaml
 
 from ..models.double_sphere import DoubleSphereModel
@@ -129,3 +130,18 @@ def load_kalibr_with_resolution(path: str, cam: str = "cam0") -> Tuple[object, T
     model = from_kalibr_cam(block)
     res = block.get("resolution", [0, 0])
     return model, (int(res[0]), int(res[1]))
+
+
+def load_kalibr_extrinsics(path: str, cam: str = "cam1") -> np.ndarray:
+    """Load the stereo extrinsic ``T_cn_cnm1`` (4x4) for ``cam`` from a camchain.
+
+    Kalibr stores, per camera, the transform from the *previous* camera into this
+    one (so ``cam1``'s ``T_cn_cnm1`` is ``T_cam1_cam0``). Raises ``KeyError`` if the
+    camera has no extrinsic block (e.g. the first camera in the chain).
+    """
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+    T = data.get(cam, {}).get("T_cn_cnm1")
+    if T is None:
+        raise KeyError(f"{cam!r} has no T_cn_cnm1 in {path}")
+    return np.asarray(T, dtype=np.float64)
