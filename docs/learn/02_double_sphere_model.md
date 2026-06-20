@@ -47,10 +47,12 @@ matrix you already know.
 
 ![The Double Sphere two-sphere projection](../../assets/learn/double_sphere_projection.gif)
 
-*The whole construction in 3D: an incoming ray (green) lands on the **first** unit sphere,
-is shifted by `ξ` onto the **second** sphere (orange), then projected from the `α`-blended
-centre (grey) onto the image plane (pink). Watch the incidence angle climb **past 90°** —
-the point still maps, which is the >180° field of view a pinhole can never reach.*
+*The construction in cross-section (the model is radially symmetric, so this slice is the
+whole story): an incoming ray (green) lands on the **first** unit sphere, is **shifted by `ξ`**
+onto the **second** sphere (orange), then **projected from the `α`-blended centre** onto the
+image plane — a pixel (pink). The shaded wedge is the valid field of view; watch `θ` climb
+**past 90°** and still land inside it — the >180° reach a pinhole can never have. (Rendered
+from the exact `ds_project` geometry — every point matches the library to ~1e-16.)*
 
 ## 3. Read the projection in code
 
