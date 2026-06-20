@@ -455,5 +455,6 @@ def solve_pnp_fisheye(points_3d: np.ndarray, points_2d: np.ndarray,
 from .core.pinhole import balanced_pinhole_K  # noqa: E402  (re-export)
 from .models.ds_math import (  # noqa: E402  (re-export for backward compatibility)
     ds_project,
+    ds_project_jacobian,  # noqa: F401  (re-exported for `from ds_msp.model import ...`)
     ds_unproject,
 )
