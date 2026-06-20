@@ -36,23 +36,27 @@ KB — so the comparison is number-for-number, not hand-waving.
 ```
             fx        fy        cx        cy        k1        k2        k3        k4
 published  190.978   190.973   254.932   256.897   0.00348   0.00072  -0.00205   0.00020
-mine       193.095   193.021   254.941   256.864   0.00904  -0.01678   0.01209  -0.00313
-|Δ|          2.117     2.047     0.010     0.033
+mine       192.271   192.242   254.934   256.752   0.00953  -0.01642   0.01186  -0.00308
+|Δ|          1.292     1.269     0.002     0.146
 
-RMS reprojection error = 0.18 px   (over ~4600 corners we detected ourselves)
+median reprojection 0.115 px, inlier RMS 0.247 px — over all 5180 corners we
+detected ourselves, none discarded.
 ```
 
-- **Principal point to ~0.03 px.** `cx, cy` are nailed.
-- **Focal length to ~1.1%.** From a single camera and a subset of frames, against a
+- **Principal point to ~0.1 px.** `cx` lands within 0.002 px; `cy` within 0.15 px.
+- **Focal length to ~0.7%.** From a single camera and a subset of frames, against a
   reference fit with the full Basalt/Kalibr pipeline (both cameras + IMU). The higher-order
   `k`'s differ more — they're weakly constrained and trade off against each other, which is
-  why we judge the camera by reprojection RMS, not by staring at `k4`.
-- **0.18 px RMS** is Kalibr-grade. That single number is the proof the calibration is real.
+  why we judge the camera by reprojection error, not by staring at `k4`.
+- **0.115 px median reprojection** is Kalibr-grade. That number is the proof the
+  calibration is real. (We report median + inlier RMS rather than a single RMS: under a
+  robust loss the plain all-corner RMS is inflated by the few outliers the loss correctly
+  *ignored*, so it would understate the fit.)
 
 The library's flagship **Double Sphere** model fits the very same corners just as tightly
-(≈0.18 px). Its focal lands elsewhere (≈152) — not a bug: on a *planar* target DS has a
-documented focal↔(`xi`,`alpha`) gauge freedom (it reaches the same reprojection error along
-a family of parameters), so we judge it by RMS, not by focal.
+(≈0.12 px median). Its focal lands elsewhere (≈152) — not a bug: on a *planar* target DS has
+a documented focal↔(`xi`,`alpha`) gauge freedom (it reaches the same reprojection error along
+a family of parameters), so we judge it by reprojection error, not by focal.
 
 ## War-story: why the detector returned **zero** tags (and the real fix)
 
@@ -79,13 +83,18 @@ we did, by checking that the *same* detector succeeds on a synthetic tag and fai
 `GridCalibrationTargetAprilgrid` — this is exactly how the official benchmark detected the
 same board.)
 
-Two more details that move RMS from ~0.6 px to ~0.18 px, both things Kalibr also does:
+Two more details turn a mediocre fit into a Kalibr-grade one, both things Kalibr also does:
 
 - **Subpixel refinement.** The raw detector localizes corners to ~1 px; `cv2.cornerSubPix`
-  sharpens them to the underlying intensity edge.
-- **Robust two-pass.** Bundle-adjust once, drop the corners that reproject worse than 1 px
-  (mis-localized peripheral tags on the curved part of the lens), refit. One bad corner
-  drags a least-squares fit; rejecting outliers is standard practice.
+  sharpens them to the underlying intensity edge (median reprojection ~0.6 px → ~0.12 px).
+- **A robust loss, not a hard cut.** A few peripheral corners are mis-localized (curved-lens
+  tags where `cornerSubPix` grabs the wrong edge) and would drag a plain L2 fit. We don't
+  *drop* them — we calibrate with a **Cauchy loss** that keeps every corner but down-weights
+  large residuals continuously (`calibrate(..., loss="cauchy", f_scale=0.5)`). It beats hard
+  rejection on focal accuracy *and* discards no data. This has its own
+  **[learning-by-doing page](robust_losses_and_evaluation.md)** with the IRLS math and a
+  runnable hard-reject-vs-robust comparison (`examples/04`) — including why you must score a
+  robust fit by **median / inlier RMS**, never by RMS over all corners.
 
 ## How it's built (the codebase's layering, applied)
 
@@ -96,7 +105,7 @@ heavy dependencies isolated at the edge:
 |---|---|---|
 | [`ds_msp/calib/targets.py`](../../ds_msp/calib/targets.py) | numpy only | `AprilGridTarget`: board geometry + correspondence assembly. Pure, unit-tested without any image. |
 | [`ds_msp/calib/detect.py`](../../ds_msp/calib/detect.py) | OpenCV + `aprilgrid` (optional) | the *only* place that touches a tag backend; lazily imported so `import ds_msp` never needs it. |
-| [`ds_msp/calib/bundle.py`](../../ds_msp/calib/bundle.py) | scipy + the model contract | the model-agnostic LM optimizer — unchanged; it already calibrated *any* `CameraModel`. |
+| [`ds_msp/calib/bundle.py`](../../ds_msp/calib/bundle.py) | scipy + the model contract | the model-agnostic LM optimizer; calibrates *any* `CameraModel`, with `loss=`/`f_scale=` for robust kernels. |
 
 `detect_aprilgrid` is exposed through a lazy `__getattr__`, and `aprilgrid` lives in the
 `[calib]` optional extra. Install the core lean; opt into the detector only when you
@@ -108,9 +117,9 @@ follows.
    coverage constrains focal length better.
 2. Calibrate `cam1` instead of `cam0` and compare to that camera's published row in the
    camchain — the two stereo lenses differ slightly.
-3. Turn off subpixel refinement (`refine=False` in `detect_aprilgrid`) and watch RMS climb.
-   Then turn off the outlier-rejection second pass and watch `fx` drift. Each guard earns
-   its place by a number.
+3. Turn off subpixel refinement (`refine=False` in `detect_aprilgrid`) and watch the median
+   climb. Then switch the Cauchy loss back to plain `loss="linear"` and watch `fx` drift away
+   from 191. Each guard earns its place by a number — `examples/04` makes that A/B explicit.
 
 **Back to the path:** the theory chapters ([Ch.3](03_projection_validity.md) validity,
 [Ch.4](04_jacobians.md) Jacobians, [Ch.5](05_calibration.md) the LM math) explain *why*

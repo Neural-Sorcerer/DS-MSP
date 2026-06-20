@@ -47,6 +47,10 @@ scratch, and land within ~1% of the calibration the dataset authors published (0
 RMS). This is the artifact the chapters build toward; you can run it after Chapter 2.
 Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
 
+**Deep-dive:** [Robust losses vs hard rejection — and why naive RMS lies](robust_losses_and_evaluation.md)
+(`examples/04`) — how a Cauchy loss handles bad corners without discarding them, the IRLS
+weighting math, and why a robust fit must be scored by median / inlier RMS.
+
 Chapters land incrementally — see [`../ROADMAP.md`](../ROADMAP.md) for the build order.
 
 ## How to use it
