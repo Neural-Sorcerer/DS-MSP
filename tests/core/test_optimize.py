@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 
 from ds_msp.core.lie import hat, so3_exp, so3_log
-from ds_msp.core.optimize import lm_solve
+from ds_msp.core.optimize import lm_solve, schur_lm
 
 
 def _make_problem(angle_deg, n=120, outlier_frac=0.0, noise=0.0, seed=0):
@@ -112,3 +112,43 @@ def test_degenerate_hessian_does_not_crash():
     out = lm_solve((np.eye(3), np.zeros(3)), res, jac, ret, block=3, max_iter=50)
     R, t = out.state
     assert np.all(np.isfinite(R)) and np.all(np.isfinite(t))
+
+
+def test_schur_matches_closed_form_on_linear_problem():
+    """The Schur complement must be exact. On a *linear* separable least-squares
+    problem (shared params + independent per-group locals) schur_lm must reproduce
+    the closed-form normal-equations solution to machine precision."""
+    rng = np.random.default_rng(7)
+    n_groups, sdim, ldim, m = 5, 3, 4, 8
+    A = [rng.normal(size=(m, sdim)) for _ in range(n_groups)]
+    B = [rng.normal(size=(m, ldim)) for _ in range(n_groups)]
+    s_true = rng.normal(size=sdim)
+    L_true = rng.normal(size=(n_groups, ldim))
+    y = [A[i] @ s_true + B[i] @ L_true[i] for i in range(n_groups)]
+
+    def residual(state):
+        s, L = state
+        return np.concatenate([A[i] @ s + B[i] @ L[i] - y[i] for i in range(n_groups)])
+
+    def linearize(state):
+        return ([A[i] @ state[0] + B[i] @ state[1][i] - y[i] for i in range(n_groups)],
+                A, B)
+
+    def retract(state, ds, dl):
+        return (state[0] + ds, state[1] + dl)
+
+    state0 = (np.zeros(sdim), np.zeros((n_groups, ldim)))
+    out = schur_lm(state0, residual, linearize, retract,
+                   n_groups=n_groups, shared_dim=sdim, local_dim=ldim, block=1)
+    s, L = out.state
+    # Closed form: stack the full design matrix and solve.
+    cols = sdim + n_groups * ldim
+    M = np.zeros((n_groups * m, cols)); rhs = np.zeros(n_groups * m)
+    for i in range(n_groups):
+        M[i * m:(i + 1) * m, :sdim] = A[i]
+        M[i * m:(i + 1) * m, sdim + i * ldim:sdim + (i + 1) * ldim] = B[i]
+        rhs[i * m:(i + 1) * m] = y[i]
+    x = np.linalg.lstsq(M, rhs, rcond=None)[0]
+    assert np.allclose(s, x[:sdim], atol=1e-7)
+    assert np.allclose(L.ravel(), x[sdim:], atol=1e-7)
+    assert out.rms < 1e-7

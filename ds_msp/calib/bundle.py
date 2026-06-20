@@ -19,7 +19,7 @@ import numpy as np
 
 from ..core.contracts import CameraModel
 from ..core.lie import so3_exp
-from ..core.optimize import lm_solve
+from ..core.optimize import schur_lm
 
 #: Map the historical SciPy ``loss`` names to the in-house IRLS kernels.
 _LOSS_TO_KERNEL = {
@@ -114,39 +114,47 @@ def calibrate(init_model: CameraModel,
             row += 2 * N
         return out
 
-    def jacobian(state):
+    def linearize(state):
+        """Per-image residual + split Jacobian (shared intrinsics A_i, local pose B_i).
+
+        Feeding the blocks separately lets the solver Schur-complement out the (block-
+        diagonal) per-image poses, so the work scales linearly in image count rather
+        than cubically in the full ``P + 6·n_img`` dimension.
+        """
         params, Rb, t = state
         m = cls.from_params(params)
-        J = np.zeros((total, P + 6 * n_img))
-        row = 0
+        r_list, A_list, B_list = [], [], []
         for i, (Xw, uv) in enumerate(zip(X_world_list, keypoints_list)):
             N = sizes[i]
             Xc = (Rb[i] @ Xw.T).T + t[i]
-            _, J_point, J_param, valid = m.project_jacobian(Xc)
-            mask = (masks[i] & valid)[:, None, None].astype(np.float64)
+            uvp, J_point, J_param, valid = m.project_jacobian(Xc)
+            mask = (masks[i] & valid)
+            r_i = np.zeros((N, 2))
+            r_i[mask] = uvp[mask] - uv[mask]
+            mask3 = mask[:, None, None].astype(np.float64)
             # δω linearized at 0 ⇒ J_r = I, so ∂Xc/∂δω = -R[Xw]_×; ∂Xc/∂δt = I.
             dXc_dw = -np.einsum('ij,njk->nik', Rb[i], _skew_batch(Xw))
             J_rvec = np.einsum('nij,njc->nic', J_point, dXc_dw)
-            J_ext = np.concatenate([J_rvec, J_point], axis=-1) * mask
-            J[row:row + 2 * N, 0:P] = (J_param * mask).reshape(2 * N, P)
-            ec = P + 6 * i
-            J[row:row + 2 * N, ec:ec + 6] = J_ext.reshape(2 * N, 6)
-            row += 2 * N
-        return J
+            J_ext = np.concatenate([J_rvec, J_point], axis=-1) * mask3
+            r_list.append(r_i.ravel())
+            A_list.append((J_param * mask3).reshape(2 * N, P))
+            B_list.append(J_ext.reshape(2 * N, 6))
+        return r_list, A_list, B_list
 
-    def retract(state, delta):
+    def retract(state, d_shared, d_local):
         params, Rb, t = state
-        params = np.clip(params + delta[:P], lb_i, ub_i)         # keep intrinsics valid
+        params = np.clip(params + d_shared, lb_i, ub_i)          # keep intrinsics valid
         Rb, t = Rb.copy(), t.copy()
         for i in range(n_img):
-            d = delta[P + 6 * i:P + 6 * i + 6]
-            Rb[i] = Rb[i] @ so3_exp(d[:3])
-            t[i] = t[i] + d[3:]
+            Rb[i] = Rb[i] @ so3_exp(d_local[i, :3])
+            t[i] = t[i] + d_local[i, 3:]
         return (params, Rb, t)
 
     kernel = _LOSS_TO_KERNEL.get(loss, loss)
-    out = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_nfev,
-                   robust_kernel=kernel, robust_scale=(f_scale if kernel != "none" else 1.0))
+    out = schur_lm(state0, residual, linearize, retract,
+                   n_groups=n_img, shared_dim=P, local_dim=6, block=2,
+                   max_iter=max_nfev, robust_kernel=kernel,
+                   robust_scale=(f_scale if kernel != "none" else 1.0))
     params, Rb, t = out.state
     model = cls.from_params(params)
 
