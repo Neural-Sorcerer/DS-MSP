@@ -6,7 +6,11 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 .env
+*.egg-info/
+build/
+dist/
 
 # Generated Results
 results/
@@ -16,3 +20,12 @@ results/
 
 # Verification outputs (regenerate via verify_real_samples.py)
 verification_output/
+
+# Public datasets (downloaded via scripts/download_datasets.sh, not committed)
+# — but DO track the dataset guide so learners know what to fetch and why.
+# (Ignore the dir *contents*, not the dir itself, so the negation can apply.)
+datasets/*
+!datasets/README.md
+
+# Personal job-hunt strategy notes (kept local, not for the public repo).
+CAREER_ROADMAP.md
