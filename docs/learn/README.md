@@ -68,6 +68,10 @@ RMS). This is the artifact the chapters build toward; you can run it after Chapt
 Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
 
 **Deep-dives:**
+- [Sphere, cylinder, pinhole: one camera, three images, and the pixel math that links them](spherical_and_cylindrical_reprojection.md)
+  (`examples/08`) — why a fisheye on a sphere/cylinder is real geometry (not a trick), the exact
+  pixel↔pixel maps between the three charts (verified to 1e-13 px round-trip), and where the
+  cylinder silently drops the polar cone.
 - [Robust losses vs hard rejection — and why naive RMS lies](robust_losses_and_evaluation.md)
   (`examples/04`) — how a Cauchy loss handles bad corners without discarding them, the IRLS
   weighting math, and why a robust fit must be scored by median / inlier RMS.
