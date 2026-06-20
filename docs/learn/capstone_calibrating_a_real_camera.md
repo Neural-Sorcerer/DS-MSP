@@ -44,10 +44,10 @@ KB — so the comparison is number-for-number, not hand-waving.
 ```
             fx        fy        cx        cy        k1        k2        k3        k4
 published  190.978   190.973   254.932   256.897   0.00348   0.00072  -0.00205   0.00020
-mine       192.271   192.242   254.934   256.752   0.00953  -0.01642   0.01186  -0.00308
-|Δ|          1.292     1.269     0.002     0.146
+mine       190.983   190.970   254.954   256.871   0.00637  -0.00485   0.00172  -0.00060
+|Δ|          0.005     0.003     0.022     0.027
 
-median reprojection 0.115 px, inlier RMS 0.247 px — over all 5180 corners we
+median reprojection 0.081 px, inlier RMS 0.159 px — over all 14460 corners we
 detected ourselves, none discarded.
 ```
 
@@ -57,19 +57,24 @@ detected ourselves, none discarded.
 model predicts** they should be. They sit on top of each other in every frame — the model
 reproduces the measurements to a tenth of a pixel.*
 
-- **Principal point to ~0.1 px.** `cx` lands within 0.002 px; `cy` within 0.15 px.
-- **Focal length to ~0.7%.** From a single camera and a subset of frames, against a
+- **Principal point to ~0.03 px.** `cx` lands within 0.022 px; `cy` within 0.027 px.
+- **Focal length to 0.003%.** `fx` agrees to 0.005 px — from a single camera, against a
   reference fit with the full Basalt/Kalibr pipeline (both cameras + IMU). The higher-order
   `k`'s differ more — they're weakly constrained and trade off against each other, which is
   why we judge the camera by reprojection error, not by staring at `k4`.
-- **0.115 px median reprojection** is Kalibr-grade. That number is the proof the
+- **0.081 px median reprojection** is Kalibr-grade. That number is the proof the
   calibration is real. (We report median + inlier RMS rather than a single RMS: under a
   robust loss the plain all-corner RMS is inflated by the few outliers the loss correctly
   *ignored*, so it would understate the fit.)
 
+> This near-exact agreement is recent: it took **multi-scale detection** to recover the
+> wide-FOV corners that pin down focal length and distortion — see the deep-dive
+> **[detecting every AprilGrid tag](robust_aprilgrid_detection.md)**. With single-scale
+> detection the focal agreed only to ~0.7%; the periphery is where the constraint lives.
+
 The library's flagship **Double Sphere** model fits the very same corners just as tightly
-(≈0.12 px median). Its focal lands elsewhere (≈152) — not a bug: `fx` is model-relative
-(the true paraxial focal is `fx_DS/(1+ξ) ≈ 193`, matching KB to 0.1%), and on a *planar*
+(≈0.08 px median). Its focal lands elsewhere (≈157) — not a bug: `fx` is model-relative
+(the true paraxial focal is `fx_DS/(1+ξ) ≈ 191`, matching KB to 0.1%), and on a *planar*
 target DS additionally has a focal↔(`xi`,`alpha`) gauge freedom. A full proof that the DS
 and KB calibrations are the *same camera* — and where they stop being — is in
 **[are two models the same camera?](are_two_models_the_same_camera.md)**. Judge a model by
@@ -93,6 +98,15 @@ The fix is a detector that matches the board: the pure-Python
 [`aprilgrid`](https://github.com/powei-lin/aprilgrid) package, which *defaults to Kalibr's
 2-cell border*. One line changes, and detection jumps from 0 to ~15–33 tags per frame.
 
+But that's only half the battle — **off-centre boards still lose most of their tags** (a
+fully-visible corner board can drop to 4 of 36), because the fisheye shrinks peripheral tags
+below the detector's size gate. Those are the wide-FOV corners that constrain the distortion,
+so losing them is exactly what kept the focal at ~0.7% instead of 0.003%. The fix —
+**multi-scale detection** plus two subpixel/pixel-centre subtleties that decide whether the
+recovered corners *help or hurt* — is its own deep-dive:
+**[detecting every AprilGrid tag](robust_aprilgrid_detection.md)**. It's why this capstone now
+uses `scales=(1, 2, 3)` by default and lands on the published numbers near-exactly.
+
 The lesson isn't "use library X." It's: **when a detector returns nothing on data you can
 see is valid, suspect a layout/convention mismatch, not your eyes** — and confirm it the way
 we did, by checking that the *same* detector succeeds on a synthetic tag and fails on a
@@ -103,8 +117,9 @@ same board.)
 Two more details turn a mediocre fit into a Kalibr-grade one, both things Kalibr also does:
 
 - **Subpixel refinement.** The raw detector localizes corners to ~1 px; `cv2.cornerSubPix`
-  sharpens them to the underlying intensity edge (median reprojection ~0.6 px → ~0.12 px).
-- **A robust loss, not a hard cut.** A few peripheral corners are mis-localized (curved-lens
+  sharpens them to the underlying intensity edge (median reprojection ~0.6 px → ~0.08 px) —
+  done *at the scale each tag was detected*, per the [detection deep-dive](robust_aprilgrid_detection.md).
+- **A robust loss, not a hard cut.** A few peripheral corners are still mis-localized (curved-lens
   tags where `cornerSubPix` grabs the wrong edge) and would drag a plain L2 fit. We don't
   *drop* them — we calibrate with a **Cauchy loss** that keeps every corner but down-weights
   large residuals continuously (`calibrate(..., loss="cauchy", f_scale=0.5)`). It beats hard

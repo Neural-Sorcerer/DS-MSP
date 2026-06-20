@@ -19,7 +19,7 @@ wide-FOV camera geometry.
 > **Two ways in — pick yours:**
 > - 🎓 **Learn the geometry** → start the runnable curriculum in **[`docs/learn/`](docs/learn/README.md)**.
 >   Each chapter prints a number you can verify; the **[🏆 capstone](docs/learn/capstone_calibrating_a_real_camera.md)**
->   calibrates a real fisheye from TUM-VI footage and matches the *published* intrinsics to ~1 % (0.12 px median).
+>   calibrates a real fisheye from TUM-VI footage and matches the *published* intrinsics to **0.003 %** focal (0.08 px median).
 > - 🛠️ **Use the library** → jump to **[Installation](#installation)** and **[Quick start](#quick-start)**.
 
 ---
@@ -197,7 +197,8 @@ track teaches it on real public data — every chapter prints a number you can v
 | :-- | :-- | :-- |
 | 1 | [Fisheye & camera models](docs/learn/01_fisheye_and_camera_models.md) | load a published calibration, prove project/unproject invert to ~1e-14 px, rectify a real frame |
 | 2 | [The Double Sphere model](docs/learn/02_double_sphere_model.md) | derive DS from first principles and read it in code |
-| 🏆 | [**Capstone: calibrate a real camera**](docs/learn/capstone_calibrating_a_real_camera.md) | detect AprilGrid corners, bundle-adjust, and **match TUM-VI's published intrinsics to ~1 %** |
+| 🏆 | [**Capstone: calibrate a real camera**](docs/learn/capstone_calibrating_a_real_camera.md) | detect AprilGrid corners (multi-scale, periphery-robust), bundle-adjust, and **match TUM-VI's published intrinsics to 0.003 %** focal |
+| 🔬 | [Detecting every AprilGrid tag (fisheye periphery)](docs/learn/robust_aprilgrid_detection.md) | why an off-centre board drops to 4/36 tags, and the multi-scale + recovery fix (focal 0.7%→0.003%) |
 | 🔬 | [Robust losses & evaluation](docs/learn/robust_losses_and_evaluation.md) | handle outliers without discarding data; why median/inlier RMS beat naive RMS |
 | 🔬 | [Are two models the same camera?](docs/learn/are_two_models_the_same_camera.md) | prove DS `fx≈152` and KB `fx≈191` describe the same lens |
 | 🔬 | [Sphere, cylinder & pinhole reprojection](docs/learn/spherical_and_cylindrical_reprojection.md) | move one fisheye between a sphere, cylinder, and pinhole image — exact pixel maps, verified to 1e-13 px |
@@ -341,7 +342,7 @@ X_world, keypoints, visibility = target.build_correspondences(detections)
 # 3. bundle-adjust from a generic seed (analytic Jacobian + robust Cauchy loss)
 seed = KannalaBrandtModel(fx=180, fy=180, cx=256, cy=256)
 result = calibrate(seed, X_world, keypoints, visibility, loss="cauchy", f_scale=0.5)
-print(result["rms_px"])      # -> ~0.18 px, matching TUM-VI's published calibration
+print(result["rms_px"])      # sub-pixel; the capstone reports 0.08 px median, matching the published calibration
 ```
 
 See the full walk-through in the **[calibration capstone](docs/learn/capstone_calibrating_a_real_camera.md)**.

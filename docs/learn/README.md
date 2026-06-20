@@ -63,11 +63,15 @@ that explain why each capstone step works (landing incrementally).*
 ### 🏆 The capstone (runnable now)
 **[Calibrate a real fisheye camera and match the published numbers](capstone_calibrating_a_real_camera.md)**
 — detect AprilGrid corners in TUM-VI's raw footage, bundle-adjust the intrinsics from
-scratch, and land within ~1% of the calibration the dataset authors published (0.18 px
-RMS). This is the artifact the chapters build toward; you can run it after Chapter 2.
-Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
+scratch, and land on the calibration the dataset authors published to **0.003%** focal
+(0.081 px median reprojection). This is the artifact the chapters build toward; you can run
+it after Chapter 2. Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
 
 **Deep-dives:**
+- [Detecting every AprilGrid tag, even at the fisheye periphery](robust_aprilgrid_detection.md)
+  (`examples/03`) — why a fully-visible board drops to 4/36 tags off-centre, the multi-scale +
+  board-guided recovery fix (36%→94% recall), and the two subpixel/pixel-centre subtleties that
+  turn the recovered corners into a *tighter* calibration (focal 0.7%→0.003%).
 - [Sphere, cylinder, pinhole: one camera, three images, and the pixel math that links them](spherical_and_cylindrical_reprojection.md)
   (`examples/08`) — why a fisheye on a sphere/cylinder is real geometry (not a trick), the exact
   pixel↔pixel maps between the three charts (verified to 1e-13 px round-trip), and where the
