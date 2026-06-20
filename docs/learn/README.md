@@ -40,7 +40,7 @@ See [`datasets/README.md`](../../datasets/README.md) for what each dataset conta
 graph LR
     C1["1 · Camera<br/>models"] --> C2["2 · Double<br/>Sphere"]
     C2 --> CAP["🏆 Capstone:<br/>calibrate a real camera"]
-    C2 -.-> C3["3 · Validity<br/>& the >180° cone"]
+    C2 --> C3["3 · Validity<br/>& the >180° cone"]
     C3 -.-> C4["4 · Analytic<br/>Jacobians"]
     C4 -.-> C5["5 · LM<br/>calibration"]
     C5 -.-> CAP
@@ -54,7 +54,7 @@ that explain why each capstone step works (landing incrementally).*
 |---|---------|--------------------|-------------|
 | 1 | [Fisheye & camera models](01_fisheye_and_camera_models.md) | load a real calibration, prove project/unproject are inverses, rectify a fisheye frame | `examples/01_realdata_fisheye_tumvi.py` |
 | 2 | [The Double Sphere model](02_double_sphere_model.md) | derive DS projection, read it in code, and reproduce a published calibration with it | `examples/02_double_sphere_tumvi.py` |
-| 3 | Projection validity & the >180° cone *(coming soon)* | explain why `z>0` is the classic bug | `ds_msp/models/ds_math.py` |
+| 3 | [Projection validity & the >180° cone](03_projection_validity.md) | explain why `z>0` is the classic bug, and *measure* the >180° valid cone (227° here) | `examples/07_fov_and_validity.py` |
 | 4 | Analytic Jacobians vs autodiff *(coming soon)* | derive a Jacobian and gradient-check it | `ds_msp/model.py` |
 | 5 | Calibration by Levenberg–Marquardt *(coming soon)* | calibrate from corner detections | `calibrate.py`, `ds_msp/calib/` |
 | 6 | One model to another: conversion *(coming soon)* | turn a DS calib into KB/EUCM without re-shooting | `ds_msp/adapt/` |

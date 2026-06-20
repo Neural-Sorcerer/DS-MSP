@@ -150,6 +150,6 @@ Calibrate each camera, compose the per-frame board poses, and you recover the st
 `T_cam1_cam0` — matching TUM-VI's published transform to **0.22° / ~1 mm**. That's the next
 step up, and it's runnable now: `python examples/06_stereo_extrinsics_tumvi.py`.
 
-**Back to the path:** the theory chapters ([Ch.3](03_projection_validity.md) validity,
-[Ch.4](04_jacobians.md) Jacobians, [Ch.5](05_calibration.md) the LM math) explain *why*
-each step here works. *(coming soon — see [`../ROADMAP.md`](../ROADMAP.md))*
+**Back to the path:** the theory chapters explain *why* each step here works —
+[Ch.3](03_projection_validity.md) (validity & the >180° cone) is ready; Ch.4 (Jacobians) and
+Ch.5 (the LM math) are coming (see [`../ROADMAP.md`](../ROADMAP.md)).
