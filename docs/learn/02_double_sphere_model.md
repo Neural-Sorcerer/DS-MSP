@@ -9,6 +9,13 @@ box — **Double Sphere** (Usenko, Demmel & Cremers, 3DV 2018) — and shows tha
 short, geometric, and exactly invertible. By the end you'll read
 [`ds_msp/models/ds_math.py`](../../ds_msp/models/ds_math.py) and recognize every line.
 
+![A 3D point projected through both spheres to a fisheye pixel](../../assets/learn/double_sphere_pipeline.gif)
+
+*The whole idea in one picture: follow the bright point as it travels **3D point → sphere 1 →
+sphere 2 → image plane**, while a colourful world of directions fills in the circular fisheye
+image. Every coloured pixel is the exact `ds_project` of its 3D direction — even the ones past
+90°, which a normal camera cannot capture. The sections below dissect each step.*
+
 ## 1. Why another model after Kannala-Brandt?
 
 Kannala-Brandt (Chapter 1's model) describes the lens by a polynomial in the incidence
