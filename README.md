@@ -374,7 +374,9 @@ Correctness is asserted with **numbers**, not screenshots (`tests/`, `verify_rea
 | KB / RadTan vs OpenCV | match to **~1e-13** |
 
 **Conclusion:** the undistorted images are geometrically accurate pinhole projections suitable for
-precise 3D vision. Reproduce locally with `bash verify_all.sh`, or run the full suite with `pytest`.
+precise 3D vision. Reproduce locally with `bash verify_all.sh` or `pytest`; for the accuracy/speed
+numbers above, run **[`python benchmarks/benchmark.py`](benchmarks/)** (e.g. KB vs `cv2.fisheye` to
+~1e-13 px; analytic Jacobian ~28× faster per LM iteration than finite differences).
 
 ---
 
