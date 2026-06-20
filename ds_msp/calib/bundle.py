@@ -44,11 +44,25 @@ def calibrate(init_model: CameraModel,
               X_world_list: List[np.ndarray],
               keypoints_list: List[np.ndarray],
               visibility_list: List[np.ndarray],
-              *, max_nfev: int = 200, verbose: int = 0) -> Dict:
+              *, max_nfev: int = 200, verbose: int = 0,
+              loss: str = "linear", f_scale: float = 1.0) -> Dict:
     """Calibrate any model from checkerboard correspondences.
 
-    Returns a dict ``{model, poses, rms_px, success}`` where ``poses`` is a list
-    of ``(rvec, tvec)`` per image.
+    Parameters
+    ----------
+    loss : str
+        Robust loss for the least-squares solve (SciPy ``least_squares`` kernels):
+        ``"linear"`` (plain L2), ``"huber"``, ``"soft_l1"``, ``"cauchy"``. A robust
+        kernel keeps *every* corner but **down-weights** large residuals instead of
+        letting one mis-localized corner drag the L2 fit — the right tool when a few
+        peripheral corners are mis-detected. Prefer this over hard outlier dropping.
+    f_scale : float
+        Residual scale (px) at which down-weighting kicks in; residuals below it stay
+        ~quadratic. ~1 px is sensible for sub-pixel-targeted corner detection.
+
+    Returns a dict ``{model, poses, rms_px, success}`` where ``poses`` is a list of
+    ``(rvec, tvec)`` per image and ``rms_px`` is the **true** reprojection RMS over
+    valid observations (independent of ``loss``, so it stays comparable across kernels).
     """
     cls = type(init_model)
     P = len(cls.param_names)
@@ -108,10 +122,26 @@ def calibrate(init_model: CameraModel,
         return J
 
     res = least_squares(residual, x0, jac=jac, bounds=(lb, ub),
-                        method="trf", x_scale="jac", max_nfev=max_nfev, verbose=verbose)
+                        method="trf", x_scale="jac", max_nfev=max_nfev, verbose=verbose,
+                        loss=loss, f_scale=f_scale)
 
     model = cls.from_params(res.x[:P])
     poses = [(res.x[P + 6 * i:P + 6 * i + 3], res.x[P + 6 * i + 3:P + 6 * i + 6])
              for i in range(n_img)]
-    rms = float(np.sqrt(2 * res.cost / res.fun.shape[0]))
+
+    # True reprojection RMS over valid observations. Computed directly (not from
+    # res.cost) so it means the same thing under any robust ``loss``: a robust
+    # kernel reshapes the cost, but the pixel error of the fit is what we report.
+    sq, n = 0.0, 0
+    off = P
+    for Xw, uv, vis in zip(X_world_list, keypoints_list, visibility_list):
+        r, t = res.x[off:off + 3], res.x[off + 3:off + 6]
+        off += 6
+        R, _ = cv2.Rodrigues(r)
+        uvp, valid = model.project((R @ Xw.T).T + t)
+        m = vis & valid
+        d = uvp[m] - uv[m]
+        sq += float((d * d).sum())
+        n += int(m.sum())
+    rms = float(np.sqrt(sq / n)) if n else float("nan")
     return {"model": model, "poses": poses, "rms_px": rms, "success": bool(res.success)}

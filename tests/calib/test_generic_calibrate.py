@@ -58,6 +58,24 @@ def test_calibrate_recovers_intrinsics(truth, init, expect_focal):
         assert np.allclose(result["model"].K[1, 1], truth.K[1, 1], rtol=0.02)
 
 
+def test_robust_loss_resists_outliers_better_than_l2():
+    # Inject gross outliers into a few corners; a robust Cauchy loss should recover
+    # the focal length more accurately than plain L2, which they drag.
+    truth = KannalaBrandtModel(320, 320, 320, 240, 0.05, 0.01, -0.002, 0.0008)
+    Xs, kps, vis = _make_dataset(truth, n_views=14, seed=3)
+    rng = np.random.default_rng(7)
+    for uv in kps[:4]:                       # corrupt ~10 corners per few views
+        idx = rng.choice(len(uv), size=10, replace=False)
+        uv[idx] += rng.uniform(-25, 25, (10, 2))
+    init = KannalaBrandtModel(340, 340, 320, 240, 0.0, 0.0, 0.0, 0.0)
+    l2 = calibrate(init, Xs, kps, vis, max_nfev=150)
+    rob = calibrate(init, Xs, kps, vis, max_nfev=150, loss="cauchy", f_scale=1.0)
+    err_l2 = abs(l2["model"].K[0, 0] - truth.K[0, 0])
+    err_rob = abs(rob["model"].K[0, 0] - truth.K[0, 0])
+    assert err_rob < err_l2          # robust loss is less biased by the outliers
+    assert err_rob < 0.02 * truth.K[0, 0]
+
+
 def test_ds_calibration_is_self_consistent():
     # Even with the DS focal gauge freedom, the calibrated model must reproject
     # the calibration data accurately (functional correctness).
