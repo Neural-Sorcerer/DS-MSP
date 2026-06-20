@@ -1,5 +1,10 @@
 # Double Sphere Camera Model (DS-MSP)
 
+[![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://github.com/Munna-Manoj/DS-MSP)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Tests](https://img.shields.io/badge/tests-171%20passing-brightgreen)
+
 **Production-ready fisheye camera implementation for 3D vision tasks.**
 
 This repository provides a robust, OpenCV-compatible wrapper for the **Double Sphere (DS) Camera Model**. It is designed to be easy to understand, test, and integrate, while offering deep technical insights into the model's capabilities and limitations.

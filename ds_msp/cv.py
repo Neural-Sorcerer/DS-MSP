@@ -11,7 +11,7 @@ The distortion coefficients `D` are assumed to be `[xi, alpha]`.
 
 import numpy as np
 import cv2
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional
 from .model import DoubleSphereCamera, ds_project, ds_unproject, balanced_pinhole_K
 
 def projectPoints(objectPoints: np.ndarray, rvec: np.ndarray, tvec: np.ndarray,

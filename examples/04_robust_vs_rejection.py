@@ -72,9 +72,12 @@ def hard_reject(seed, Xs, UVs, VIs, reject_px=1.0):
         R, _ = cv2.Rodrigues(rvec)
         uvp, valid = m.project((R @ X.T).T + tvec)
         good = valid & (np.linalg.norm(uvp - uv, axis=1) < reject_px)
-        total += len(X); kept += int(good.sum())
+        total += len(X)
+        kept += int(good.sum())
         if good.sum() >= 8:
-            Xk.append(X[good]); Uk.append(uv[good]); Vk.append(np.ones(int(good.sum()), bool))
+            Xk.append(X[good])
+            Uk.append(uv[good])
+            Vk.append(np.ones(int(good.sum()), bool))
     out = calibrate(m, Xk, Uk, Vk, max_nfev=120)
     out["used"] = f"{kept}/{total}"
     return out
@@ -95,7 +98,8 @@ def main() -> None:
     n = sum(len(x) for x in Xs)
     print(f"{len(Xs)} frames, {n} detected corners. Published fx = {ref.fx:.3f}\n")
 
-    seed = lambda: KannalaBrandtModel(180.0, 180.0, W / 2, H / 2)
+    def seed():
+        return KannalaBrandtModel(180.0, 180.0, W / 2, H / 2)
     runs = [
         ("L2 (no robustness)", calibrate(seed(), Xs, UVs, VIs, max_nfev=120), f"{n}/{n}"),
         ("hard reject >1px",   None, None),  # filled below (needs its own fit)
@@ -106,9 +110,11 @@ def main() -> None:
     runs[1] = ("hard reject >1px", hr, hr["used"])
 
     hdr = f"{'method':22s} {'corners':>9s} {'Δfx':>7s} {'median':>8s} {'inlierRMS':>10s} {'naiveRMS':>9s}"
-    print(hdr); print("-" * len(hdr))
+    print(hdr)
+    print("-" * len(hdr))
     for name, out, used in runs:
-        m = out["model"]; s = stats(m, out["poses"], Xs, UVs)
+        m = out["model"]
+        s = stats(m, out["poses"], Xs, UVs)
         print(f"{name:22s} {used:>9s} {abs(m.fx-ref.fx):7.2f} {s['median']:8.3f} "
               f"{s['inlier_rms']:10.3f} {s['naive_rms']:9.3f}")
 

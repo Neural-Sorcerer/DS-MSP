@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint + types + layering
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e ".[calib]" -r requirements-dev.txt
+      - name: ruff (lint)
+        run: ruff check .
+      - name: import-linter (layer decoupling)
+        run: lint-imports
+      - name: mypy (typed core)
+        # The core contracts/pinhole layer is fully typed and gated strictly here;
+        # the typed surface expands over time (see pyproject [tool.mypy]).
+        run: mypy ds_msp/core --follow-imports=silent --ignore-missing-imports
+
+  test:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: pip install -e ".[calib]" -r requirements-dev.txt
+      - name: pytest (+ coverage)
+        run: pytest -q --cov=ds_msp --cov-report=term-missing

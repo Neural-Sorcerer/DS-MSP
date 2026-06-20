@@ -1,9 +1,7 @@
 import numpy as np
-import pytest
 import cv2
-import os
 
-from ds_msp.model import DoubleSphereCamera, ds_project, ds_unproject
+from ds_msp.model import DoubleSphereCamera, ds_unproject
 import ds_msp.cv as ds_camera_cv
 
 # ============================================================================

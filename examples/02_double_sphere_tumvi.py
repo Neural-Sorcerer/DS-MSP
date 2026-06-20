@@ -100,7 +100,7 @@ def main() -> None:
     print()
     verdict = "PASS" if report["max_px"] < 0.1 else "CHECK"
     print(f"[{verdict}] Double Sphere re-expresses TUM-VI's published KB model to well")
-    print(f"       under a tenth of a pixel — DS has the expressive power for this lens.")
+    print("       under a tenth of a pixel — DS has the expressive power for this lens.")
     print("       (This is conversion between models, NOT calibration from images.)")
 
     print("\nTo actually CALIBRATE this camera from raw footage — detect AprilGrid")

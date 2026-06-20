@@ -165,7 +165,8 @@ def finite_difference_point_jacobian(model: CameraModel, P: np.ndarray,
     P = np.asarray(P, dtype=np.float64)
     J = np.zeros(P.shape[:-1] + (2, 3), dtype=np.float64)
     for k in range(3):
-        dp = np.zeros(3); dp[k] = eps
+        dp = np.zeros(3)
+        dp[k] = eps
         up, _ = model.project(P + dp)
         um, _ = model.project(P - dp)
         J[..., k] = (up - um) / (2 * eps)
@@ -186,8 +187,10 @@ def finite_difference_param_jacobian(model: CameraModel, P: np.ndarray,
     cls = type(model)
     for k in range(p.size):
         h = eps * max(abs(p[k]), 1.0)
-        pp = p.copy(); pp[k] += h
-        pm = p.copy(); pm[k] -= h
+        pp = p.copy()
+        pp[k] += h
+        pm = p.copy()
+        pm[k] -= h
         up, _ = cls.from_params(pp).project(P)
         um, _ = cls.from_params(pm).project(P)
         J[..., k] = (up - um) / (2 * h)

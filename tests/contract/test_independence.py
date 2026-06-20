@@ -77,9 +77,6 @@ def test_math_layer_is_pure_numpy():
 def test_ops_do_not_import_concrete_models_or_each_other():
     for f in _files("ops/*.py"):
         internal, _ = _internal_imports(f)
-        forbidden = {m for m in internal
-                     if m.startswith("ds_msp.models.") and not m.endswith("_math")
-                     or m.startswith("ds_msp.ops.")}
         # importing core is allowed; importing a concrete model class is not
         bad = {m for m in internal if m.startswith("ds_msp.models")}
         assert not bad, f"{f.name} (ops) must depend on core contracts, not models ({bad})"

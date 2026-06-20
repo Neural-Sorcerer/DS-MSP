@@ -10,7 +10,6 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ds_msp.cv as ds_camera_cv
-from ds_msp.model import DoubleSphereCamera
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -92,7 +91,7 @@ def verify_3d_reconstruction(points_2d_orig, points_3d_gt, K, D, K_new, rvec, tv
     std_dist = distances.std()
     
     print(f"Reconstructed Square Size: {mean_dist:.6f} +/- {std_dist:.6f} meters")
-    print(f"Target Square Size: 0.200000 meters")
+    print("Target Square Size: 0.200000 meters")
     
     if pos_error < 0.001 and abs(mean_dist - 0.2) < 0.001:
         print("✅ Verification Successful: 3D Geometry Preserved.")
