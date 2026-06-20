@@ -105,6 +105,82 @@ def test_relative_pose_is_model_agnostic_smoke():
     assert _rot_err_deg(R, Rhat) < 1e-5
 
 
+def _skew(v):
+    return np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+
+
+# ---------------------------------------------------------------------------
+# Geometry-aware properties of the essential matrix (see docs/research/mvg_two_view_geometry.md)
+# ---------------------------------------------------------------------------
+
+def test_essential_singular_values_are_one_one_zero():
+    """E = [t]_× R has singular values (σ, σ, 0); the manifold projection sets σ=1."""
+    f1, f2, _, _, _ = _scene(seed=10)
+    s = np.linalg.svd(essential_from_rays(f1, f2), compute_uv=False)
+    assert np.allclose(s, [1.0, 1.0, 0.0], atol=1e-9)
+
+
+def test_essential_determinant_is_zero():
+    f1, f2, _, _, _ = _scene(seed=11)
+    assert abs(np.linalg.det(essential_from_rays(f1, f2))) < 1e-9
+
+
+def test_essential_satisfies_characterization_equation():
+    """A 3×3 matrix is essential iff 2 E Eᵀ E − tr(E Eᵀ) E = 0 (Huang–Faugeras)."""
+    f1, f2, _, _, _ = _scene(seed=12)
+    E = essential_from_rays(f1, f2)
+    assert np.abs(2 * E @ E.T @ E - np.trace(E @ E.T) * E).max() < 1e-9
+
+
+def test_essential_matches_skew_t_times_R_up_to_sign():
+    """The recovered E equals [t]_× R built from ground truth, up to sign and scale."""
+    f1, f2, R, t, _ = _scene(seed=13)
+    E = essential_from_rays(f1, f2)
+    E_gt = _skew(t) @ R
+    E = E / np.linalg.norm(E)
+    E_gt = E_gt / np.linalg.norm(E_gt)
+    assert min(np.linalg.norm(E - E_gt), np.linalg.norm(E + E_gt)) < 1e-8
+
+
+def test_essential_is_scale_invariant_in_the_rays():
+    """Rays need not be unit: scaling each ray leaves E unchanged (it's a direction)."""
+    f1, f2, _, _, _ = _scene(seed=14)
+    rng = np.random.default_rng(0)
+    s1 = rng.uniform(0.5, 3, (f1.shape[0], 1))
+    s2 = rng.uniform(0.5, 3, (f2.shape[0], 1))
+    E_a = essential_from_rays(f1, f2)
+    E_b = essential_from_rays(f1 * s1, f2 * s2)
+    E_a, E_b = E_a / np.linalg.norm(E_a), E_b / np.linalg.norm(E_b)
+    assert min(np.linalg.norm(E_a - E_b), np.linalg.norm(E_a + E_b)) < 1e-9
+
+
+def test_triangulated_points_reproject_onto_both_rays():
+    """The triangulated point's direction matches f1, and (R X + t) matches f2 — to ~0°."""
+    f1, f2, R, t, _ = _scene(seed=15)
+    Rh, th, X = recover_pose(f1, f2)
+    dir1 = X / np.linalg.norm(X, axis=1, keepdims=True)
+    X2 = (Rh @ X.T).T + th
+    dir2 = X2 / np.linalg.norm(X2, axis=1, keepdims=True)
+    ang1 = np.degrees(np.arccos(np.clip(np.einsum("ij,ij->i", dir1, f1), -1, 1)))
+    ang2 = np.degrees(np.arccos(np.clip(np.einsum("ij,ij->i", dir2, f2), -1, 1)))
+    assert ang1.max() < 1e-4 and ang2.max() < 1e-4
+
+
+def test_noise_degrades_gracefully_and_monotonically():
+    """Stability: pose error grows ~linearly with ray noise, no blow-up at small σ."""
+    f1, f2, R, t, _ = _scene(seed=16)
+    rng = np.random.default_rng(3)
+    prev = -1.0
+    for sig, bound in [(1e-4, 0.3), (1e-3, 3.0)]:
+        f1n = f1 + sig * rng.standard_normal(f1.shape)
+        f2n = f2 + sig * rng.standard_normal(f2.shape)
+        Rh, _, _ = recover_pose(f1n, f2n)
+        err = _rot_err_deg(R, Rh)
+        assert err < bound                      # bounded
+        assert err > prev                       # grows with noise
+        prev = err
+
+
 def test_recover_pose_through_a_real_double_sphere_camera():
     """End-to-end on a wide-FOV model: 3D points -> pixels (two views) -> unproject to
     rays -> recover pose. The rays come from `DoubleSphereModel`, proving the geometry is

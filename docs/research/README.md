@@ -8,6 +8,7 @@ Captured, verified research that feeds the [roadmap](../ROADMAP.md). Each report
 |---|---|
 | [Findings — representations for 3D tasks](representations_for_3d_tasks_findings.md) | Faithful record of a multi-source deep-research run on image-domain charts (ERP / cubemap / tangent / pinhole) for stereo, SfM, and reconstruction. 24/25 claims passed 3-vote adversarial verification; 1 killed. Votes, evidence, sources, caveats, open questions. |
 | [Tier-1 implementation spec](tier1_implementation_spec.md) | Each finding turned into a buildable unit (C1–C9): math, core algorithm, verification test, target module, dependencies, tier (🟩 core / 🟦 research). The direct map from research → Python. |
+| [Two-view geometry — derivations & proofs](mvg_two_view_geometry.md) | Formal companion to the shipped `ds_msp/mvg/` (C1): epipolar-constraint-on-rays proof, essential-matrix properties, eight-point + manifold projection optimality, ray cheirality, midpoint triangulation, and numerical stability / degeneracies. Each claim ↔ a named test. |
 
 **How this connects:** the spec's units (C1 two-view-on-rays, C3 charts, C4 sphere-sweep, …) are
 scheduled in [`../ROADMAP.md`](../ROADMAP.md) under **Tier 1**. The geometry these reports cover
