@@ -1,5 +1,9 @@
 # DS-MSP → Multi-Model Camera Library + Adapter — Analysis & Plan
 
+> **Design note (internal).** An engineering planning document — the analysis and plan behind
+> the multi-model work — not a tutorial. To *use* the library see [`MULTI_MODEL.md`](MULTI_MODEL.md);
+> to *learn* the geometry see [`learn/`](learn/README.md).
+
 **Goal:** evolve DS-MSP from a Double-Sphere-only library into a small multi-model
 camera library where a user can calibrate in Double Sphere (DS) and **convert the
 result to any other supported model** (UCM, EUCM, KB, RadTan/pinhole, …), with

@@ -1,5 +1,9 @@
 # DS-MSP Multi-Model — Development Process (TDD, Decoupling, Branching)
 
+> **Design note (internal).** An engineering process document — *how* the multi-model work was
+> built — not a tutorial. To *use* the library see [`MULTI_MODEL.md`](MULTI_MODEL.md); to *learn*
+> the geometry see [`learn/`](learn/README.md).
+
 Companion to `MULTI_MODEL_ADAPTER_PLAN.md`. This document answers *how* we build
 it: the decoupling architecture, the interface/data contracts, the contract-test
 discipline, the TDD loop, and the branching strategy — so every module is
