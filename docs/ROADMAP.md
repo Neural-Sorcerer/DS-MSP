@@ -17,7 +17,7 @@ with both a clean implementation *and* a chapter that explains them.
 - Multi-model library + parameter conversion between models.
 - Generic Levenberg–Marquardt calibration with analytic Jacobians.
 - Kalibr camchain I/O; OpenCV-compatible wrappers; TI LDC hardware export.
-- Reproducible setup: `pip install -e .`, 166 passing tests, dataset fetcher.
+- Reproducible setup: `pip install -e .`, 237 passing tests, dataset fetcher.
 - Learning track: **Chapters 1–2** — camera models on real TUM-VI data, and the
   Double Sphere model reproducing TUM-VI's published calibration to 0.025 px.
 - **Capstone**: calibrate a real fisheye end-to-end from AprilGrid footage
@@ -64,29 +64,41 @@ and the essential matrix still holds on **unit bearing vectors**.
 Builds on the verified pixel↔ray reprojection already shipped
 ([deep-dive](learn/spherical_and_cylindrical_reprojection.md), `examples/08`).
 
-**Core library capability** 🟩 (in recommended PR order):
-- **`C1`+`C2` — two-view geometry on rays** (`ds_msp/mvg/`): essential matrix via 8-point on
-  bearing vectors (+ spherical 360-8PA normalization), 5-point relative pose, pose recovery with
-  **ray cheirality**, ray triangulation, and on-sphere (angular) RANSAC. *Highest leverage* — pure
-  math on existing `unproject`; the foundation for SfM. Verify: noise-free `R,t` recovery to
-  `<1e-6°`, `f₂ᵀEf₁ < 1e-10`.
-- **`C3` — chart library** (`ds_msp/ops/reproject.py`): lift the example-08 maps into the library,
-  add **cubemap** + **tangent-image (gnomonic)** charts with valid masks, seam/pole handling, and
-  FOV-aware auto-intrinsics. Verify: round-trip `<1e-12 px` per chart.
-- **`C4` — sphere-sweep stereo** (`ds_msp/stereo/`): depth directly on calibrated fisheye, **no
-  rectification** (avoids ERP's position-dependent disparity). Verify: `<1%` depth on synthetic.
-- **`C5` — angular / tangent-plane BA residual** (`ds_msp/calib/`): the principled wide-FOV
-  reprojection error, alongside the current pixel residual.
+**Core library capability — shipped & tested** ✅ (the wide-FOV 3D stack now exists in code):
+- **`C1`+`C2` — two-view geometry on rays** (`ds_msp/mvg/two_view.py`, `ransac.py`): essential
+  matrix via 8-point on bearing vectors (+ spherical 360-8PA normalization), pose recovery with
+  **ray cheirality**, ray triangulation, on-sphere (angular) RANSAC, and an end-to-end
+  `estimate_relative_pose`. *(5-point minimal solver deferred.)*
+- **`C3` — chart library** (`ds_msp/ops/reproject.py`): sphere / cylinder / pinhole / **cubemap** /
+  **tangent-image (gnomonic)** charts with valid masks and FOV-aware auto-intrinsics.
+- **`C4` — sphere-sweep stereo** (`ds_msp/stereo/sphere_sweep.py`): depth directly on calibrated
+  fisheye, **no rectification**.
+- **`C5` — angular BA residual** (`ds_msp/mvg/bundle.py`) + **Schur-complement sparse BA** for
+  calibration (`ds_msp/calib/bundle.py`).
+- **`C6` — spherical epipolar rectification** (`ds_msp/stereo/rectify.py`): the clean teaching
+  complement to `C4`; depth agrees to `<1%`.
 
-**Research / nice-to-have** 🟦:
-- **`C6`** spherical epipolar rectification (top-bottom vertical-meridian rig) — also a clean
-  teaching artifact.
+**Manifold-optimization foundation — shipped & tested** ✅ (underpins all of the above):
+- **SO(3)/SE(3) Lie primitives** (`ds_msp/core/lie.py`) — manifold-correct pose updates; flat
+  parameterization is a *correctness* bug, not just slower.
+- **In-house Levenberg–Marquardt solver** (`ds_msp/core/optimize.py`) — re-basing manifold LM that
+  replaced scipy; made the Lie path both fast and robust. Plus robust M-estimation kernels with
+  graduated non-convexity (`ds_msp/core/robust.py`).
+
+**Research / nice-to-have — not started** 🟦:
 - **`C7`** multi-chart MVS depth fusion · **`C8`** optical-flow ERP dense reconstruction ·
-  **`C9`** ecosystem interop (COLMAP / openMVG / OpenMVS export).
+  **`C9`** ecosystem interop (COLMAP / openMVG / OpenMVS export). See the
+  [spec](research/tier1_implementation_spec.md#c7--multi-chart-mvs-depth-fusion-) for details.
+
+**⚠️ Active focus — the teaching layer lags the code.** The Tier-1 library shipped *ahead* of
+its curriculum: C1–C6 and the manifold foundation have passing tests but **no `docs/learn/`
+chapters and no runnable `examples/`** yet. This violates the design rule below ("each unit lands
+with a chapter"). Closing that gap is the next priority — see the
+[learning-docs audit](research/learning_docs_audit.md) for the chapter plan (new **Part II —
+Geometry & 3D**, Ch.8–12).
 
 **Killed assumption to honor:** there is *no* canonical spherical chart — keep everything
-chart-agnostic, keyed off `project` / `unproject`. Each unit lands with its verification number
-and a `docs/learn/` chapter, per the design rules below.
+chart-agnostic, keyed off `project` / `unproject`.
 
 ## Design rules (so the two goals stay aligned)
 - Every new capability ships with a test that **proves a number**, not a screenshot.

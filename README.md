@@ -4,7 +4,7 @@
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![Tests](https://img.shields.io/badge/tests-174%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-237%20passing-brightgreen)
 
 A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) lenses — built around the
 **Double Sphere** model (Usenko et al. 2018) and a uniform multi-model layer, with analytic Jacobians,
@@ -63,7 +63,7 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 | **Model conversion** | Translate a calibration between models **without images or recalibration** (sample → unproject → LM refit). |
 | **Calibration** | Generic Levenberg–Marquardt bundle adjustment for *any* model, with a robust (Cauchy) loss option. |
 | **Ecosystem fluency** | Read/write **Kalibr** camchain YAML; OpenCV-style drop-in API; **TI Jacinto** LDC hardware mesh export. |
-| **Verified, CI-tested** | 171 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
+| **Verified, CI-tested** | 237 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
 
 ---
 
@@ -164,12 +164,12 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 
 | Path | Contents |
 | :-- | :-- |
-| [`ds_msp/`](ds_msp) | The library: `core/` contracts → pure math → `models/` → services (`ops/`, `adapt/`, `io/`, `calib/`), plus `cv.py` (OpenCV-style API) and `ldc.py` (hardware export). |
-| [`examples/`](examples) | Eight runnable demos on real data (`01`–`08`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence, stereo extrinsics, the >180° validity cone, and sphere/cylinder/pinhole reprojection. |
-| [`docs/learn/`](docs/learn/README.md) | The guided curriculum (start here to learn). |
-| [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md), [`WRITING_GUIDE.md`](docs/WRITING_GUIDE.md) (docs style guide). |
+| [`ds_msp/`](ds_msp) | The library: `core/` (contracts + Lie/LM solver + robust kernels) → pure math → `models/` → services (`ops/`, `adapt/`, `io/`, `calib/`) → 3D stack (`mvg/` two-view geometry, `stereo/` depth), plus `cv.py` (OpenCV-style API) and `ldc.py` (hardware export). |
+| [`examples/`](examples) | Eight runnable demos on real data (`01`–`08`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence, stereo extrinsics, the >180° validity cone, and sphere/cylinder/pinhole reprojection. *(Part II / Tier-1 demos landing — see [ROADMAP](docs/ROADMAP.md).)* |
+| [`docs/learn/`](docs/learn/README.md) | The guided curriculum (start here to learn) — Part I (calibration) + Part II (geometry & 3D). |
+| [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md), [`WRITING_GUIDE.md`](docs/WRITING_GUIDE.md) (docs style guide), [`research/`](docs/research) (Tier-1 spec + audits). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
-| [`tests/`](tests) | 171 tests (contract suite, analytic-Jacobian gradient checks, calibration). |
+| [`tests/`](tests) | 237 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
 
 The library is **strictly layered** (enforced in CI by import-linter): `core` depends on nothing, the
 service layers depend only on the contract — not on concrete models or each other — and the pure-math
@@ -191,7 +191,12 @@ graph TD
 ## Learn: the guided curriculum
 
 If you want to *understand* wide-FOV geometry (not just call it), the **[`docs/learn/`](docs/learn/README.md)**
-track teaches it on real public data — every chapter prints a number you can verify.
+track teaches it on real public data — every chapter prints a number you can verify. It runs in
+two arcs: **Part I — Calibration** (take one camera to a published-grade calibration) and
+**Part II — Geometry & 3D** (take that camera out into the world: two-view pose, manifold
+optimization, stereo depth).
+
+**Part I — Calibration**
 
 | # | Lesson | You'll be able to… |
 | :-- | :-- | :-- |
@@ -202,6 +207,12 @@ track teaches it on real public data — every chapter prints a number you can v
 | 🔬 | [Robust losses & evaluation](docs/learn/robust_losses_and_evaluation.md) | handle outliers without discarding data; why median/inlier RMS beat naive RMS |
 | 🔬 | [Are two models the same camera?](docs/learn/are_two_models_the_same_camera.md) | prove DS `fx≈152` and KB `fx≈191` describe the same lens |
 | 🔬 | [Sphere, cylinder & pinhole reprojection](docs/learn/spherical_and_cylindrical_reprojection.md) | move one fisheye between a sphere, cylinder, and pinhole image — exact pixel maps, verified to 1e-13 px |
+
+**Part II — Geometry & 3D** — *the wide-FOV SLAM/SfM stack. Library shipped & tested
+(`ds_msp/mvg/`, `ds_msp/core/`, `ds_msp/stereo/`); chapters + runnable examples landing now —
+see [`docs/learn/`](docs/learn/README.md) and the [ROADMAP](docs/ROADMAP.md).* Two-view geometry on bearing vectors, manifold (SO(3)/SE(3))
+pose optimization with an in-house LM solver, Schur-complement bundle adjustment, and sphere-sweep
+stereo depth straight on raw fisheye.
 
 ---
 

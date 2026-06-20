@@ -36,19 +36,37 @@ See [`datasets/README.md`](../../datasets/README.md) for what each dataset conta
 
 ## The path
 
+The track has two arcs. **Part I — Calibration** takes one camera from "what is a fisheye"
+to a published-grade calibration you reproduce yourself. **Part II — Geometry & 3D** takes
+that calibrated camera *out into the world*: two-view pose, manifold optimization, and stereo
+depth — the geometry behind SLAM and SfM. Part II's **library is shipped and tested**
+(`ds_msp/mvg/`, `ds_msp/core/`, `ds_msp/stereo/`); its chapters and runnable examples are
+landing now (see [ROADMAP](../ROADMAP.md)).
+
 ```mermaid
 graph LR
-    C1["1 · Camera<br/>models"] --> C2["2 · Double<br/>Sphere"]
-    C2 --> CAP["🏆 Capstone:<br/>calibrate a real camera"]
-    C2 --> C3["3 · Validity<br/>& the >180° cone"]
-    C3 -.-> C4["4 · Analytic<br/>Jacobians"]
-    C4 -.-> C5["5 · LM<br/>calibration"]
-    C5 -.-> CAP
-    CAP --> DD["🔬 Deep-dives:<br/>robust loss · model equivalence"]
+    subgraph PI["Part I · Calibration"]
+        A1["1 · Camera<br/>models"] --> A2["2 · Double<br/>Sphere"]
+        A2 --> A3["3 · Validity<br/>& the >180° cone"]
+        A2 --> CAP["🏆 Capstone:<br/>calibrate a real camera"]
+        A3 -.-> A4["4 · Analytic<br/>Jacobians"]
+        A4 -.-> A5["5 · LM<br/>calibration"]
+        A5 -.-> CAP
+        CAP --> DD["🔬 Deep-dives:<br/>robust loss · model equivalence · charts"]
+    end
+    subgraph PII["Part II · Geometry &amp; 3D"]
+        B8["8 · Two-view<br/>geometry on rays"] --> B9["9 · Optimizing<br/>on the manifold"]
+        B9 --> B10["10 · Scalable<br/>bundle adjustment"]
+        B8 --> B11["11 · Sphere-sweep<br/>stereo depth"]
+        B11 --> B12["12 · Spherical<br/>rectification"]
+    end
+    CAP ==> B8
 ```
 
-*Solid = the runnable path today (do Ch.1 → Ch.2 → capstone). Dotted = the theory chapters
-that explain why each capstone step works (landing incrementally).*
+*Part I solid = runnable today (do Ch.1 → Ch.2 → capstone); dotted = theory chapters landing
+incrementally. Part II = library shipped & tested, chapters/examples in progress.*
+
+### Part I — Calibration
 
 | # | Chapter | You'll be able to… | Code anchor |
 |---|---------|--------------------|-------------|
@@ -59,6 +77,21 @@ that explain why each capstone step works (landing incrementally).*
 | 5 | Calibration by Levenberg–Marquardt *(coming soon)* | calibrate from corner detections | `calibrate.py`, `ds_msp/calib/` |
 | 6 | One model to another: conversion *(coming soon)* | turn a DS calib into KB/EUCM without re-shooting | `ds_msp/adapt/` |
 | 7 | Reproducing a published calibration *(coming soon)* | match TUM-VI / EuRoC reference numbers with your own code | `ds_msp/io/kalibr.py` |
+
+### Part II — Geometry & 3D *(library shipped & tested; chapters + examples landing)*
+
+A fisheye measures **rays**, so this whole arc is built on `project` / `unproject` — epipolar
+lines become curves, disparity becomes angular, and the essential matrix still holds on unit
+bearing vectors. Scoped from a verified deep-research study (see the
+[Tier-1 spec](../research/tier1_implementation_spec.md)).
+
+| # | Chapter | You'll be able to… | Code anchor (shipped) |
+|---|---------|--------------------|-----------------------|
+| 8 | Two-view geometry on rays *(chapter pending)* | recover relative pose from an image pair — essential matrix on bearings, ray triangulation, on-sphere RANSAC | `ds_msp/mvg/` (`two_view.py`, `ransac.py`) |
+| 9 | Optimizing on the manifold *(chapter pending)* | see why flat pose parameterization is a *correctness* bug, and how an in-house SO(3)/SE(3) LM solver fixes it | `ds_msp/core/` (`lie.py`, `optimize.py`) |
+| 10 | Scalable bundle adjustment *(chapter pending)* | minimize angular reprojection error with a Schur-complement sparse solve | `ds_msp/mvg/bundle.py`, `ds_msp/calib/bundle.py` |
+| 11 | Sphere-sweep stereo depth *(chapter pending)* | get dense depth straight on raw fisheye — no rectification, no pinhole detour | `ds_msp/stereo/sphere_sweep.py` |
+| 12 | Spherical epipolar rectification *(chapter pending)* | the pedagogically-clean depth path; matches sphere-sweep to <1% | `ds_msp/stereo/rectify.py` |
 
 ### 🏆 The capstone (runnable now)
 **[Calibrate a real fisheye camera and match the published numbers](capstone_calibrating_a_real_camera.md)**
