@@ -119,12 +119,24 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 | [`ds_msp/`](ds_msp) | The library: `core/` contracts → pure math → `models/` → services (`ops/`, `adapt/`, `io/`, `calib/`), plus `cv.py` (OpenCV-style API) and `ldc.py` (hardware export). |
 | [`examples/`](examples) | Five runnable demos on real TUM-VI data (`01`–`05`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence. |
 | [`docs/learn/`](docs/learn/README.md) | The guided curriculum (start here to learn). |
-| [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md). |
+| [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md), [`WRITING_GUIDE.md`](docs/WRITING_GUIDE.md) (docs style guide). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
 | [`tests/`](tests) | 171 tests (contract suite, analytic-Jacobian gradient checks, calibration). |
 
 The library is **strictly layered** (enforced in CI by import-linter): `core` depends on nothing, the
-service layers don't import each other, and the pure-math modules are NumPy-only.
+service layers depend only on the contract — not on concrete models or each other — and the pure-math
+modules are NumPy-only.
+
+```mermaid
+graph TD
+    services["services: ops · adapt · calib · io<br/>(work on any model via the contract)"]
+    models["models: DoubleSphere · UCM · EUCM · KB · RadTan · OCam<br/>(value object + pure-NumPy *_math)"]
+    core["core: CameraModel contract · pinhole<br/>(dependency-free foundation)"]
+    services --> core
+    models -. implements .-> core
+```
+
+*(Full diagram and design guarantees in [`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md#6-architecture--design-guarantees).)*
 
 ---
 
@@ -265,12 +277,25 @@ Two paths, depending on your data:
 [capstone](docs/learn/capstone_calibrating_a_real_camera.md) uses on real TUM-VI AprilGrid footage:
 
 ```python
+import glob
 from ds_msp.calib import calibrate, AprilGridTarget, detect_aprilgrid
-# detect corners -> build correspondences -> bundle-adjust (analytic Jacobian, robust loss)
-result = calibrate(seed_model, X_world_list, keypoints_list, visibility_list,
-                   loss="cauchy", f_scale=0.5)
-print(result["model"], result["rms_px"])
+from ds_msp.models import KannalaBrandtModel
+
+# 1. detect AprilGrid corners in your calibration frames
+frames = sorted(glob.glob("datasets/tumvi/dataset-calib-cam1_512_16/mav0/cam0/data/*.png"))
+detections = detect_aprilgrid(frames, family="t36h11")
+
+# 2. turn tag detections into 3D<->2D correspondences (board geometry: 6x6, 88 mm, spacing 0.3)
+target = AprilGridTarget(tag_rows=6, tag_cols=6, tag_size=0.088, tag_spacing=0.3)
+X_world, keypoints, visibility = target.build_correspondences(detections)
+
+# 3. bundle-adjust from a generic seed (analytic Jacobian + robust Cauchy loss)
+seed = KannalaBrandtModel(fx=180, fy=180, cx=256, cy=256)
+result = calibrate(seed, X_world, keypoints, visibility, loss="cauchy", f_scale=0.5)
+print(result["rms_px"])      # -> ~0.18 px, matching TUM-VI's published calibration
 ```
+
+See the full walk-through in the **[calibration capstone](docs/learn/capstone_calibrating_a_real_camera.md)**.
 
 **2 — The bundled Double Sphere script** calibrates from COCO-style checkerboard annotations:
 
