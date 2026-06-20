@@ -54,9 +54,12 @@ detected ourselves, none discarded.
   *ignored*, so it would understate the fit.)
 
 The library's flagship **Double Sphere** model fits the very same corners just as tightly
-(≈0.12 px median). Its focal lands elsewhere (≈152) — not a bug: on a *planar* target DS has
-a documented focal↔(`xi`,`alpha`) gauge freedom (it reaches the same reprojection error along
-a family of parameters), so we judge it by reprojection error, not by focal.
+(≈0.12 px median). Its focal lands elsewhere (≈152) — not a bug: `fx` is model-relative
+(the true paraxial focal is `fx_DS/(1+ξ) ≈ 193`, matching KB to 0.1%), and on a *planar*
+target DS additionally has a focal↔(`xi`,`alpha`) gauge freedom. A full proof that the DS
+and KB calibrations are the *same camera* — and where they stop being — is in
+**[are two models the same camera?](are_two_models_the_same_camera.md)**. Judge a model by
+reprojection error, not by its raw focal.
 
 ## War-story: why the detector returned **zero** tags (and the real fix)
 
