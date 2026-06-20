@@ -1,7 +1,8 @@
 # DS-MSP — Double Sphere & Multi-Model Fisheye Camera Library
 
+[![PyPI](https://img.shields.io/pypi/v/ds-msp)](https://pypi.org/project/ds-msp/)
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://github.com/Munna-Manoj/DS-MSP)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Tests](https://img.shields.io/badge/tests-171%20passing-brightgreen)
 
@@ -70,20 +71,22 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 Requires **Python ≥ 3.10**.
 
 ```bash
-git clone https://github.com/Munna-Manoj/DS-MSP.git
-cd DS-MSP
-
-# core library (editable install)
-pip install -e .
-
-# …or with the AprilGrid detector used by the calibration capstone
-pip install -e ".[calib]"
+pip install ds-msp                 # core library
+pip install "ds-msp[calib]"        # + AprilGrid detector (for the calibration capstone)
 ```
 
 Verify:
 
 ```bash
 python -c "import ds_msp; print('DS-MSP loaded:', ds_msp.__name__)"
+```
+
+**For development** (running the examples, tests, or contributing), install from source instead:
+
+```bash
+git clone https://github.com/Munna-Manoj/DS-MSP.git
+cd DS-MSP
+pip install -e ".[calib]"          # editable install with the detector extra
 ```
 
 > Prefer isolation? `python -m venv .venv && source .venv/bin/activate` (or `uv venv`) first.
