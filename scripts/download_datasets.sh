@@ -4,7 +4,7 @@
 #
 #   bash scripts/download_datasets.sh            # download everything below
 #   bash scripts/download_datasets.sh tumvi      # only the TUM-VI group
-#   bash scripts/download_datasets.sh euroc       # only EuRoC
+#   bash scripts/download_datasets.sh euroc       # EuRoC: MANUAL download, this only extracts it
 #   bash scripts/download_datasets.sh tumrgbd     # only TUM RGB-D
 #
 # Files land under ./datasets/<group>/ (git-ignored). Archives are extracted
@@ -46,18 +46,40 @@ dl_tumrgbd () {
 }
 
 dl_euroc () {
-  echo "== EuRoC MAV — Vicon Room 1 bundle (stereo + IMU + GT + radtan calib) =="
-  # EuRoC migrated to the ETH Research Collection, which serves bundled ZIPs via a
-  # browser/JS download (no scriptable URL). Supply the "Vicon Room 1 Datasets"
-  # direct link once, then:
-  #     EUROC_VR1='<pasted-url>' bash scripts/download_datasets.sh euroc
-  : "${EUROC_VR1:=}"
-  if [ -n "$EUROC_VR1" ]; then
-    get "$EUROC_VR1" euroc/vicon_room1.zip && extract euroc/vicon_room1.zip
-  else
-    echo "  (EUROC_VR1 not set — right-click 'Vicon Room 1 Datasets' on the ETH"
-    echo "   Research Collection page, Copy link, and re-run with EUROC_VR1=<url>.)"
+  echo "== EuRoC MAV — Vicon Room 1 (stereo + IMU + GT + radtan calib) =="
+  # HONEST NOTE: EuRoC CANNOT be downloaded by this (or any) script from its current
+  # host. The legacy direct host (robotics.ethz.ch/~asl-datasets) is OFFLINE, and the
+  # current host (ETH Research Collection) serves a browser/JS bundle with no stable
+  # curl-able URL. So this step does NOT download — it only EXTRACTS a bundle you have
+  # already downloaded in a browser and placed under datasets/euroc/.
+  if ls "$DEST"/euroc/*/mav0 >/dev/null 2>&1; then
+    echo "  ✓ EuRoC sequences already extracted under datasets/euroc/ — nothing to do."
+    return 0
   fi
+  local z found=""
+  for z in "$DEST"/euroc/vicon_room1.zip "$DEST"/euroc/*.zip; do
+    [ -f "$z" ] && { found="$z"; break; }
+  done
+  if [ -n "$found" ]; then
+    echo "  ↪ extracting $found (this bundle nests V1_0x*.zip inside)"
+    unzip -n -q "$found" -d "$DEST/euroc"
+    # the outer bundle contains per-sequence .zip (ASL) and .bag (ROS) — unpack the
+    # ASL zips, ignore the bags
+    for z in "$DEST"/euroc/*/*.zip "$DEST"/euroc/*.zip; do
+      [ -f "$z" ] && unzip -n -q "$z" -d "$(dirname "$z")/$(basename "${z%.zip}")" 2>/dev/null
+    done
+    echo "  done. Verify with: ls datasets/euroc/*/mav0"
+    return 0
+  fi
+  cat <<'EOF'
+  EuRoC is a MANUAL download — no script can fetch it from the current host:
+    1. Open the EuRoC MAV page on the ETH Research Collection
+       (search: "EuRoC MAV dataset research-collection.ethz.ch").
+    2. Download the "Vicon Room 1 Datasets" ZIP in your browser (~5.8 GB).
+    3. Move it to:  datasets/euroc/vicon_room1.zip
+    4. Re-run:      bash scripts/download_datasets.sh euroc   (this unpacks it)
+  If you already have datasets/euroc/V1_0x_*/mav0/, you're done — ignore this.
+EOF
 }
 
 case "${1:-all}" in
