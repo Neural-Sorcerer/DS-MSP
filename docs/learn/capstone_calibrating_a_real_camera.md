@@ -12,11 +12,19 @@ We use TUM-VI's `cam0` calibration sequence — 436 frames of someone waving a 6
 in front of a 195° fisheye — and check our result against the Kannala-Brandt calibration
 the dataset authors published.
 
+![AprilGrid detection on real TUM-VI frames](../../assets/learn/aprilgrid_detection.gif)
+
+*Step one, on real data: the AprilGrid detector finds the board's tags (here ~35 of 36) and
+their corners in each fisheye frame. Those corners are the measurements we calibrate from.*
+
 ## The pipeline (all library code)
 
-```
-raw frames ─▶ detect AprilGrid ─▶ 3D↔2D correspondences ─▶ bundle adjust ─▶ compare
-            detect_aprilgrid()    AprilGridTarget          calibrate()      vs published
+```mermaid
+graph LR
+    A["raw frames"] --> B["detect AprilGrid<br/>detect_aprilgrid()"]
+    B --> C["3D↔2D correspondences<br/>AprilGridTarget"]
+    C --> D["bundle-adjust<br/>calibrate()"]
+    D --> E["compare to<br/>published reference"]
 ```
 
 1. **Detect** the board corners — `ds_msp.calib.detect_aprilgrid` (the one piece that needs
@@ -42,6 +50,12 @@ mine       192.271   192.242   254.934   256.752   0.00953  -0.01642   0.01186  
 median reprojection 0.115 px, inlier RMS 0.247 px — over all 5180 corners we
 detected ourselves, none discarded.
 ```
+
+![Reprojected corners vs detected corners](../../assets/learn/calibration_reprojection.gif)
+
+*What "0.1 px" looks like: green = the corners we **detected**, red = where the **calibrated
+model predicts** they should be. They sit on top of each other in every frame — the model
+reproduces the measurements to a tenth of a pixel.*
 
 - **Principal point to ~0.1 px.** `cx` lands within 0.002 px; `cy` within 0.15 px.
 - **Focal length to ~0.7%.** From a single camera and a subset of frames, against a
@@ -123,6 +137,18 @@ follows.
 3. Turn off subpixel refinement (`refine=False` in `detect_aprilgrid`) and watch the median
    climb. Then switch the Cauchy loss back to plain `loss="linear"` and watch `fx` drift away
    from 191. Each guard earns its place by a number — `examples/04` makes that A/B explicit.
+
+## Beyond one camera: the stereo rig
+
+A rig has a second number that matters just as much as the intrinsics — the rigid transform
+**between** the two cameras. Because TUM-VI's `cam0` and `cam1` are hardware-synced, each
+instant sees the *same* board from both:
+
+![Synchronized stereo views of the AprilGrid](../../assets/learn/stereo_pair.gif)
+
+Calibrate each camera, compose the per-frame board poses, and you recover the stereo extrinsic
+`T_cam1_cam0` — matching TUM-VI's published transform to **0.22° / ~1 mm**. That's the next
+step up, and it's runnable now: `python examples/06_stereo_extrinsics_tumvi.py`.
 
 **Back to the path:** the theory chapters ([Ch.3](03_projection_validity.md) validity,
 [Ch.4](04_jacobians.md) Jacobians, [Ch.5](05_calibration.md) the LM math) explain *why*

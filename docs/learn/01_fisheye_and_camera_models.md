@@ -76,7 +76,14 @@ bug, full stop. **Always have a number that proves correctness.** It's how you d
 
 Finally the example rectifies a real frame into a virtual pinhole view and saves
 `results/learn/01_fisheye_rectified.png`. Compare it to the raw frame: the bowed ceiling
-lines are now straight. Mechanically (see [`ds_msp/ops/undistort.py`](../../ds_msp/ops/undistort.py)),
+lines are now straight.
+
+![Fisheye rectification, sweeping the balance knob](../../assets/undistort_demo.gif)
+
+*Left: the raw fisheye frame. Right: the rectified pinhole view as the `balance` knob sweeps
+from widest-FOV (more scene, black borders) to tightest-crop. The bent lines straighten out.*
+
+Mechanically (see [`ds_msp/ops/undistort.py`](../../ds_msp/ops/undistort.py)),
 for every output pixel we build a pinhole ray with a fresh `K_new`, **project it through
 the fisheye model** to find where to sample the source image, and resample. The `balance`
 knob trades field-of-view for how much black border you tolerate.
