@@ -82,4 +82,4 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "service layers are mutually independent"
 type = "independence"
-modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib"]
+modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg"]

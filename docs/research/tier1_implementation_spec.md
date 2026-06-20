@@ -14,9 +14,16 @@ Legend — **Tier**: 🟩 core library capability · 🟦 research / nice-to-hav
 
 ---
 
-## C1 · Bearing-vector two-view geometry  🟩  `[F5][F6]`
-**New module:** `ds_msp/mvg/` (multi-view geometry on rays). The highest-leverage unit: it is
-pure math on the bearing vectors `unproject` already returns, needs **no chart**, and unlocks SfM.
+## C1 · Bearing-vector two-view geometry  🟩  `[F5][F6]` — ✅ **implemented**
+**Module:** `ds_msp/mvg/two_view.py` (pure-numpy service layer, mutually independent in the
+import-linter contract). Shipped: `essential_from_rays` (eight-point on rays + manifold
+projection), `decompose_essential`, `triangulate_rays` (midpoint), `recover_pose` (ray
+cheirality), `relative_pose`, `epipolar_residual`. Verified on synthetic scenes *and*
+end-to-end through `DoubleSphereModel` (project → unproject → recover) to <1e-3° pose error
+(`tests/mvg/test_two_view.py`, 8 tests). **Still C2/next:** spherical (360-8PA) normalization,
+5-point minimal solver (or OpenGV/PoseLib wrap), and the RANSAC layer below.
+The highest-leverage unit: pure math on the bearing vectors `unproject` already returns,
+needs **no chart**, and unlocks SfM.
 
 ### C1.1 Calibrated epipolar constraint
 For correspondences with unit rays `f₁` (cam1) and `f₂` (cam2) and relative pose `(R, t)`

@@ -16,6 +16,12 @@ from .models import (
 )
 from .adapt import convert
 from .ops import Undistorter, solve_pnp
+from .mvg import (
+    essential_from_rays,
+    recover_pose,
+    relative_pose,
+    triangulate_rays,
+)
 from .cv import (
     projectPoints,
     undistortPoints,
@@ -39,6 +45,7 @@ __all__ = [
     "DoubleSphereModel", "EUCMModel", "KannalaBrandtModel",
     "OCamModel", "RadTanModel", "UCMModel",
     "convert", "Undistorter", "solve_pnp",
+    "essential_from_rays", "recover_pose", "relative_pose", "triangulate_rays",
     "projectPoints", "undistortPoints", "distortPoints",
     "initUndistortRectifyMap", "undistortImage",
     "estimateNewCameraMatrixForUndistortRectify", "solvePnP",
