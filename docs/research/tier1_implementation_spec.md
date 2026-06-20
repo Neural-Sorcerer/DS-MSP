@@ -67,7 +67,14 @@ Point `X` from rays `f₁,f₂` with centers `c₁,c₂` (world frame).
 
 ---
 
-## C2 · Robust estimation on the sphere  🟩  `[F6]`
+## C2 · Robust estimation on the sphere  🟩  `[F6]` — ✅ **implemented (RANSAC + whitening; 5-pt deferred)**
+**Module:** `ds_msp/mvg/ransac.py` — `ransac_relative_pose` (adaptive RANSAC over the eight-point,
+angular Sampson scoring) + `sampson_residual`, plus `essential_from_rays(normalize=True)` spherical
+whitening in `two_view.py`. Verified: exact noise-free, lower median error on clustered rays,
+exact pose under 30 % outliers vs >13° naïve (`tests/mvg/test_ransac.py`, 7 tests). **Deferred:**
+the 5-point minimal solver (no OpenGV/PoseLib installed) — RANSAC currently samples 8; wrapping a
+5-point solver would cut iterations on low-inlier data. Original plan below.
+
 **Module:** `ds_msp/mvg/ransac.py`. Minimal-sample RANSAC wrapping C1.
 - **Sample** 5 (C1.3) or 8 (C1.2) correspondences.
 - **Score** with an **angular / on-sphere Sampson** residual, *not* pixel Sampson:

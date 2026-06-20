@@ -45,24 +45,53 @@ def epipolar_residual(E: np.ndarray, f1: np.ndarray, f2: np.ndarray) -> np.ndarr
     return np.einsum("ij,jk,ik->i", f2, np.asarray(E, float), f1)
 
 
-def essential_from_rays(f1: np.ndarray, f2: np.ndarray) -> np.ndarray:
+def _whiten(f: np.ndarray, reg: float = 1e-2) -> Tuple[np.ndarray, np.ndarray]:
+    """Spherical pre-conditioning: a linear map ``T`` balancing the ray spread.
+
+    Returns ``(f @ Tᵀ, T)`` with ``T = (Cov + εI)^{-1/2}``, ``Cov = (1/N) Σ fᵢ fᵢᵀ`` and
+    ``ε = reg·λ_max``. Balancing the bearing-vector covariance better conditions the eight-point
+    design matrix when the rays cluster in a narrow cone (the 360-8PA idea, arXiv:2104.10900).
+
+    The ``εI`` regularization is essential and not cosmetic: for a *very* narrow cone ``Cov`` is
+    near-singular, and an unregularized ``Cov^{-1/2}`` would amplify the near-degenerate axis by a
+    huge factor and make the estimate **worse**. Tying ε to ``λ_max`` caps that amplification, so
+    whitening never hurts (it just does less when there's little spread to balance). Does **not**
+    re-unitize — the constraint ``(T₂f₂)ᵀ E' (T₁f₁) = 0`` recovers ``E = T₂ᵀ E' T₁``.
+    """
+    cov = (f.T @ f) / f.shape[0]
+    w, V = np.linalg.eigh(cov)
+    w = w + reg * w.max()
+    T = V @ np.diag(1.0 / np.sqrt(w)) @ V.T
+    return f @ T.T, T
+
+
+def essential_from_rays(f1: np.ndarray, f2: np.ndarray, *, normalize: bool = False
+                        ) -> np.ndarray:
     """Essential matrix from ≥8 ray correspondences (eight-point on bearing vectors).
 
     Solves ``f2ᵀ E f1 = 0`` in the least-squares (smallest-singular-vector) sense, then
     projects onto the essential manifold (singular values forced to ``(1, 1, 0)``).
 
-    Note: this is the plain eight-point on rays. For noisy 360°-FOV data a spherical
-    pre-conditioning (Robust 360-8PA) tightens the estimate — a planned refinement (C2);
-    pixel-domain Hartley normalization does **not** apply to bearing vectors.
+    ``normalize=True`` applies spherical whitening (`_whiten`) before the solve and undoes it
+    after — leave it off for clean data (it changes nothing in the noise-free limit), turn it
+    on for noisy / narrow-baseline rays where conditioning matters. Pixel-domain Hartley
+    normalization does **not** apply to bearing vectors; this is its spherical analogue.
     """
     f1 = _as_rays(f1)
     f2 = _as_rays(f2)
     if f1.shape[0] < 8:
         raise ValueError(f"need ≥8 correspondences, got {f1.shape[0]}")
-    # Each row: coefficients of vec(E) (row-major) in f2ᵀ E f1 = 0  →  kron(f2, f1).
-    A = f2[:, [0, 0, 0, 1, 1, 1, 2, 2, 2]] * np.tile(f1, 3)
+    g1, g2 = f1, f2
+    T1 = T2 = None
+    if normalize:
+        g1, T1 = _whiten(f1)
+        g2, T2 = _whiten(f2)
+    # Each row: coefficients of vec(E) (row-major) in g2ᵀ E g1 = 0  →  kron(g2, g1).
+    A = g2[:, [0, 0, 0, 1, 1, 1, 2, 2, 2]] * np.tile(g1, 3)
     _, _, Vt = np.linalg.svd(A)
     E = Vt[-1].reshape(3, 3)
+    if normalize:
+        E = T2.T @ E @ T1                       # map back to un-whitened coordinates
     # Project onto the essential manifold: equal non-zero singular values, rank 2.
     U, _, Vt2 = np.linalg.svd(E)
     return U @ np.diag([1.0, 1.0, 0.0]) @ Vt2

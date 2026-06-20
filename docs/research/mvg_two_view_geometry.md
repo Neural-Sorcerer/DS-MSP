@@ -123,11 +123,24 @@ rays to $\sim0°$.
 
 ## 7. Numerical stability and degeneracies
 
-- **Conditioning.** Unit bearing vectors are already $O(1)$ and well-scaled, so $A$ is far better
-  conditioned than the pixel design matrix the classic eight-point needs Hartley-normalized.
-  Pixel-domain Hartley normalization does **not** transfer to the sphere; the right analogue is a
-  spherical pre-conditioning (Robust 360-8PA, arXiv:2104.10900) — planned as **C2**, most useful
-  when the rays cluster in a narrow cone.
+- **Conditioning & spherical whitening (C2).** Unit bearing vectors are already $O(1)$ and
+  well-scaled, so $A$ is far better conditioned than the pixel design matrix the classic
+  eight-point needs Hartley-normalized. Pixel-domain Hartley normalization does **not** transfer
+  to the sphere; the analogue (`normalize=True`, the 360-8PA idea) whitens the ray covariance,
+  $T = (\mathrm{Cov} + \varepsilon I)^{-1/2}$, solves in the whitened frame, and maps back
+  $E = T_2^\top E' T_1$. It is **exact in the noise-free limit** (changes nothing) and lowers the
+  median pose error on clustered rays (e.g. a forward cone at $\sigma = 3\,$mrad: $10.5° \to 4.7°$).
+  The $\varepsilon I$ (with $\varepsilon = 10^{-2}\lambda_{\max}$) is **load-bearing**: for a
+  *very* narrow cone $\mathrm{Cov}$ is near-singular and an unregularized $\mathrm{Cov}^{-1/2}$
+  amplifies the degenerate axis and makes the estimate *worse* — the regularization caps that, so
+  whitening helps for moderate clustering and is safe otherwise. *Tests:*
+  `test_spherical_normalization_is_exact_in_the_noise_free_limit`,
+  `test_spherical_normalization_improves_conditioning_on_clustered_rays`.
+- **Robust estimation (C2).** A few mismatched rays break the least-squares eight-point, so
+  `ransac_relative_pose` wraps it in RANSAC scored by the **angular Sampson residual** (radians,
+  tangent-plane gradients), with an adaptive iteration count. On 30 % outliers it recovers the
+  pose exactly where the naïve eight-point lands $>13°$ off. *Tests:*
+  `test_ransac_recovers_pose_under_30pct_outliers`, `test_ransac_beats_naive_eight_point_with_outliers`.
 - **Backward stability.** Both the null-space solve and the decomposition are pure SVD, which is
   backward stable; the noise-free pipeline recovers pose to $\sim10^{-6}$°.
 - **Graceful degradation.** Pose error grows roughly *linearly* with ray noise and does not blow

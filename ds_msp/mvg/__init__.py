@@ -10,6 +10,7 @@ This layer is pure NumPy and model-agnostic: feed it rays, get relative pose and
 See ``docs/research/tier1_implementation_spec.md`` (unit C1).
 """
 
+from .ransac import ransac_relative_pose, sampson_residual
 from .two_view import (
     decompose_essential,
     epipolar_residual,
@@ -26,4 +27,6 @@ __all__ = [
     "recover_pose",
     "relative_pose",
     "epipolar_residual",
+    "ransac_relative_pose",
+    "sampson_residual",
 ]
