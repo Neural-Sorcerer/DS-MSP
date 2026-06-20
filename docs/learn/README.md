@@ -7,6 +7,12 @@ part is the whole point: in 3D vision you don't *hope* your math is right, you
 *measure* that it is (a good unprojection inverts projection to ~1e-14 px, not "looks
 about right").
 
+![Calibration reprojection on real TUM-VI data](../../assets/learn/calibration_reprojection.gif)
+
+*Where this leads — the [capstone](capstone_calibrating_a_real_camera.md): calibrate a real
+fisheye from scratch until the model (red) predicts every detected corner (green) to a tenth
+of a pixel, matching the published reference.*
+
 This is the teaching layer. The library it teaches (`ds_msp/`) stays deliberately
 clean and untouched by tutorial clutter — read the docs to learn, read the code to
 see how it's done in production.
@@ -29,6 +35,20 @@ bash scripts/download_datasets.sh tumvi
 See [`datasets/README.md`](../../datasets/README.md) for what each dataset contains.
 
 ## The path
+
+```mermaid
+graph LR
+    C1["1 · Camera<br/>models"] --> C2["2 · Double<br/>Sphere"]
+    C2 --> CAP["🏆 Capstone:<br/>calibrate a real camera"]
+    C2 -.-> C3["3 · Validity<br/>& the >180° cone"]
+    C3 -.-> C4["4 · Analytic<br/>Jacobians"]
+    C4 -.-> C5["5 · LM<br/>calibration"]
+    C5 -.-> CAP
+    CAP --> DD["🔬 Deep-dives:<br/>robust loss · model equivalence"]
+```
+
+*Solid = the runnable path today (do Ch.1 → Ch.2 → capstone). Dotted = the theory chapters
+that explain why each capstone step works (landing incrementally).*
 
 | # | Chapter | You'll be able to… | Code anchor |
 |---|---------|--------------------|-------------|

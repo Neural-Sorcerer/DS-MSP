@@ -45,6 +45,16 @@ squares where each corner's weight is
 w(r) = ρ'(r) / r          (this is Iteratively Reweighted Least Squares, IRLS)
 ```
 
+Each iteration re-weights every corner by its current residual, so an outlier's pull shrinks
+as the fit reveals it to be an outlier:
+
+```mermaid
+graph LR
+    A["compute residuals<br/>rᵢ = ‖project − observed‖"] --> B["weight each corner<br/>wᵢ = ρ'(rᵢ)/rᵢ"]
+    B --> C["weighted least-squares step<br/>(analytic Jacobian)"]
+    C --> A
+```
+
 `w(r)` is how much that corner is allowed to influence the answer. Compare three choices:
 
 | loss | ρ(r) (small → large r) | weight `w(r)` | what large outliers do |

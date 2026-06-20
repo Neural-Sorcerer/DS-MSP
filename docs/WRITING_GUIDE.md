@@ -121,6 +121,10 @@ Walls of text don't teach. Use the right device for the job:
 A figure or diagram should be *informative*, not decorative — if it doesn't help the reader
 build a mental model, cut it.
 
+**Generate visuals from real data, reproducibly.** GIFs and figures should come from a
+checked-in script (e.g. `scripts/make_learn_gifs.py`), not a one-off screenshot — so they
+can be regenerated, and so they show the *actual* output of the code the doc describes.
+
 ---
 
 ## 6. Voice and word choice
