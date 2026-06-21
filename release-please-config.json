@@ -5,6 +5,8 @@
       "release-type": "python",
       "package-name": "ds-msp",
       "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
       "draft": false,
