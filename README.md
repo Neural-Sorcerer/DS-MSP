@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSE)
 ![Tests](https://img.shields.io/badge/tests-237%20passing-brightgreen)
+[![Live demo](https://img.shields.io/badge/%E2%96%B6%20live%20demo-interactive%20studio-6e8bff)](https://munna-manoj.github.io/DS-MSP/)
 
 A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) lenses — built around the
 **Double Sphere** model (Usenko et al. 2018) and a uniform multi-model layer, with analytic Jacobians,
@@ -68,6 +69,12 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 ---
 
 ## See the geometry
+
+> 🎥 **Prefer to drive it yourself?** Open the **[live interactive studio →](https://munna-manoj.github.io/DS-MSP/)**
+> — pick any of the **six camera models** the library ships, drag a 3D point, and step its projection
+> onto a **sphere, cylinder, or plane** in real time. Every pixel is computed by a TypeScript port of
+> `ds_msp`, cross-checked against the library to ~10⁻¹² px. Source lives in [`web/`](web/); it stays in
+> the repo but **never ships with `pip install ds-msp`**.
 
 A camera model is a recipe for turning 3D rays into pixels. Here the **Double Sphere** model
 runs on a synthetic scene — each world point traced through its two spheres onto the image

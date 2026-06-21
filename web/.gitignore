@@ -1,0 +1,12 @@
+# dependencies & build output — never committed (the source is enough)
+node_modules/
+dist/
+dist-ssr/
+
+# vite / ts caches
+.vite/
+*.tsbuildinfo
+
+# local env & editor
+*.local
+.DS_Store

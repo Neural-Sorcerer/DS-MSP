@@ -56,6 +56,9 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# web/ is the standalone TS visualiser (not part of the package); its lone Python
+# helper is a dev-only reference dumper and is out of scope for package linting.
+extend-exclude = ["web"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   DS-MSP design system — "optical bench at night".
+   Palette derived from lens-coating iridescence + FOV-validity semantics.
+   ========================================================================== */
+@theme {
+  --color-ink: #0b0e14; /* page ground (deep blue-black) */
+  --color-ink-2: #0e131c; /* slightly lifted ground */
+  --color-panel: #141925; /* surfaces */
+  --color-panel-2: #1a2030; /* hovered surfaces */
+  --color-line: #232a3a; /* hairlines / graticule */
+  --color-line-bright: #33405a;
+  --color-text: #e6eaf2;
+  --color-muted: #9aa4b8;
+  --color-faint: #5b6678;
+
+  --color-primary: #6e8bff; /* bearing rays / interactive */
+  --color-valid: #4ed7c0; /* projectable light (θ < 90°) */
+  --color-beyond: #ffc56e; /* the wide zone (90° ≤ θ < θmax) */
+  --color-invalid: #ff5d6c; /* beyond θmax */
+
+  --font-display: "Bricolage Grotesque", "IBM Plex Sans", sans-serif;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background-color: var(--color-ink);
+  background-image:
+    radial-gradient(1200px 600px at 70% -10%, rgba(110, 139, 255, 0.08), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(78, 215, 192, 0.05), transparent 60%);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* tabular, instrument-style numerals everywhere data lives */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* faint dotted "optical bench" grid behind panels */
+.bench-grid {
+  background-image:
+    linear-gradient(var(--color-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-line) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: -1px -1px;
+  opacity: 0.35;
+}
+
+/* range sliders — themed to the instrument look */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--color-line-bright);
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 0 0 1px var(--color-primary), 0 0 12px rgba(110, 139, 255, 0.6);
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.18);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--color-ink);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

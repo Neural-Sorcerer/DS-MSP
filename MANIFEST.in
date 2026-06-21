@@ -1,0 +1,7 @@
+# The PyPI package is the algorithm only. The interactive visualiser (web/) and
+# the figure studio (simulations/) are learning/dev tooling — they live in the
+# repo but must never ship in the sdist or wheel. The wheel already contains only
+# ds_msp* (see [tool.setuptools.packages.find]); this keeps the sdist lean too.
+prune web
+prune simulations
+global-exclude *.tsbuildinfo *.map .DS_Store
