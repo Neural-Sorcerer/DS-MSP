@@ -121,7 +121,26 @@ and produces a trajectory a roboticist recognizes.
 pinhole detour — exactly the Tier-1 stack. **No new math is invented here; VO is the integration
 test for C1–C5 + the manifold LM.**
 
-**Module:** `ds_msp/vo/` (new pure-numpy service layer; independent in the import-linter contract).
+**Module:** `ds_msp/vo/` (a *composition* layer above `ds_msp.mvg` + `ds_msp.core` — not one of
+the mutually-independent service layers, since it deliberately reuses them).
+
+**Core + evaluation — shipped & tested** ✅:
+- **`ds_msp/vo/odometry.py`** — `estimate_trajectory`: two-view relative pose (C1/C2) chained with
+  **landmark scale-propagation** (a shared overlapping triple ties each pair's unit translation to
+  the established metric), so the monocular trajectory is self-consistent up to one global
+  similarity. Runs on given per-frame correspondences.
+- **`ds_msp/vo/metrics.py`** — `align_sim3` (Umeyama), `ate_rmse`, `rpe_rmse`: the standard
+  up-to-scale evaluation toolkit.
+- *Verified:* on a synthetic trajectory projected through a real DS-MSP model, recovered path
+  matches GT to **ATE `< 1e-6`** (noise-free) / **`< 0.1 m`** at 0.3 px noise on a ~1.75 m path,
+  rotation RPE `< 1e-3°` (`tests/vo/`, 6 tests).
+
+**Real-data validation — prototyped** (`examples/09_monocular_vo_tumvi.py`): KLT-tracked cam0 →
+`estimate_trajectory` → Sim(3) ATE vs mocap0 GT on TUM-VI room1. Two 200-frame segments both land
+at **~0.08 m ATE = 0.9 % of path** (consistent) — good for open-loop monocular VO. *Remaining
+before merge:* keyframe/gap handling so the chainer survives low-overlap pairs over a **full
+sequence**, then a `docs/learn/` chapter + the committed example. **This is a front-end building
+block, not a benchmark entry** — the leaderboard bar lives in Tier 3 (VIO).
 
 **Pipeline.**
 1. **Track** features frame-to-frame (KLT / FAST+descriptor) → pixel correspondences.
@@ -148,6 +167,15 @@ runnable `examples/`.
 to get a **metric, drift-resistant** trajectory — full **visual-inertial odometry**. This is the
 capability the TUM-VI / EuRoC datasets exist for, and the headline portfolio artifact. Built as
 three dependent units; each ships with its own verification number and chapter.
+
+**Success bar (agreed, eyes open).** The benchmark is judged on **full-sequence, SE(3),
+metric-scale ATE on the TUM-VI room sequences** — the *only* fair comparison to the published table:
+ORB-SLAM3 ≈ **0.009 m** (stereo-inertial + loop closure + global BA; the top entry), OKVIS ≈ 0.063,
+BASALT ≈ 0.082, VINS-Mono room1 ≈ 0.089. **Target: the OKVIS/BASALT band (~3–13 cm).** *Non-goal:*
+beating ORB-SLAM3 / being literal top-5% — a from-scratch system ranking #1 on a mature SLAM
+benchmark is not a realistic bar; mid-table parity with established open-source VIO is. (Tier-2
+monocular VO is a *front-end building block*, not a benchmark contender on its own — it is
+category-mismatched to a visual-*inertial* leaderboard, so it is **not** gated on this bar.)
 
 **`3a` · Camera–IMU calibration** 🟩 — `ds_msp/calib/cam_imu.py`
 Estimate **`T_cam_imu`** (the rigid camera↔IMU transform) **and the camera–IMU time offset**
