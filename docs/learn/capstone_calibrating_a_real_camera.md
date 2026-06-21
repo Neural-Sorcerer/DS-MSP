@@ -162,8 +162,10 @@ instant sees the *same* board from both:
 ![Synchronized stereo views of the AprilGrid](../../assets/learn/stereo_pair.gif)
 
 Calibrate each camera, compose the per-frame board poses, and you recover the stereo extrinsic
-`T_cam1_cam0` — matching TUM-VI's published transform to **0.22° / ~1 mm**. That's the next
-step up, and it's runnable now: `python examples/06_stereo_extrinsics_tumvi.py`.
+`T_cam1_cam0` — matching TUM-VI's published transform to **0.062° rotation and 0.25 mm
+baseline** (~0.2%). That's the next step up: see the
+[stereo extrinsics chapter](stereo_extrinsics_calibration.md) and run
+`python examples/06_stereo_extrinsics_tumvi.py --stride 8`.
 
 **Back to the path:** the theory chapters explain *why* each step here works —
 [Ch.3](03_projection_validity.md) (validity & the >180° cone) is ready; Ch.4 (Jacobians) and

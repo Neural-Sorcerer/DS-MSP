@@ -105,6 +105,10 @@ it after Chapter 2. Code: `examples/03_calibrate_tumvi_aprilgrid.py`.
   (`examples/03`) — why a fully-visible board drops to 4/36 tags off-centre, the multi-scale +
   board-guided recovery fix (36%→94% recall), and the two subpixel/pixel-centre subtleties that
   turn the recovered corners into a *tighter* calibration (focal 0.7%→0.003%).
+- [Stereo extrinsics: recovering a rig's camera-to-camera transform](stereo_extrinsics_calibration.md)
+  (`examples/06`) — why a shared board cancels the unknown motion (one cancellation, the whole
+  method), per-frame pose alignment, chordal-mean + median averaging, and a scored comparison
+  against the published reference: **0.062° rotation, 0.25 mm baseline** (~0.2%).
 - [Sphere, cylinder, pinhole: one camera, three images, and the pixel math that links them](spherical_and_cylindrical_reprojection.md)
   (`examples/08`) — why a fisheye on a sphere/cylinder is real geometry (not a trick), the exact
   pixel↔pixel maps between the three charts (verified to 1e-13 px round-trip), and where the

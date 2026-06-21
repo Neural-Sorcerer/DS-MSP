@@ -1,5 +1,14 @@
 # Learning & documentation audit — 2026-06-21
 
+> **Refresh — 2026-06-21 (later same day).** Since the original audit: (1) the README/ROADMAP
+> **navigation fixes shipped** (Part I/II split, Tier-1 made visible) — the "Navigation fixes"
+> section below is now **done**; (2) **stereo extrinsics is complete** — `stereo_extrinsics_calibration.md`
+> shipped through the full doc pipeline (example `06` + chapter + a math-asserted figure),
+> taking it 🟡→✅; (3) a **fourth coverage dimension — Figure — is now tracked** (the pipeline gained
+> a `doc-illustrator` stage that owns figures). Adding it surfaces a new gap: three deep-dives carry
+> no figure of their own. The Tier-1 MVG / stereo-depth / manifold stack remains undocumented — that
+> is still the headline gap.
+
 **Question:** are the learning docs (`docs/learn/`) up to date with the features that have
 shipped, or lagging?
 
@@ -14,38 +23,46 @@ for everything built after the capstone.
 
 ## Method & scope
 
-Compared three things, feature by feature:
+Compared four things, feature by feature:
 1. **Code shipped** — `ds_msp/` modules (public API + module docstrings).
 2. **Runnable example** — `examples/NN_*.py` (the curriculum's "prints a verifiable number" contract).
 3. **Learning doc** — a chapter or deep-dive in `docs/learn/`.
+4. **Figure** — a real-data, reproducible visual *embedded in that doc* (the `doc-illustrator`
+   stage's deliverable). A figure that lives in `assets/` but isn't embedded in the feature's own
+   doc doesn't count for that feature.
 
-A feature is **documented** only when all three exist. Research notes in `docs/research/`
-(the Tier-1 spec, the diffpnp survey) are **not** counted — they're design records, not the
-teaching layer.
+A feature is **fully documented** only when code + example + doc all exist; the **figure** column
+is tracked separately because a chapter without a figure is still a valid chapter (some concepts
+need no visual), but a missing-yet-warranted figure is a real gap the pipeline can now close.
+Research notes in `docs/research/` (the Tier-1 spec, the diffpnp survey) are **not** counted —
+they're design records, not the teaching layer.
 
 ---
 
 ## Coverage matrix
 
-| Feature (code shipped) | Module | Example | Learn doc | Status |
-|---|---|---|---|---|
-| Fisheye / camera models | `models/`, `model.py` | `01` | Ch.1 | ✅ complete |
-| Double Sphere model | `models/ds_math.py` | `02` | Ch.2 | ✅ complete |
-| Projection validity / >180° cone | `models/double_sphere.py` | `07` | Ch.3 | ✅ complete |
-| Calibration capstone (AprilGrid → BA) | `calib/` | `03` | capstone + deep-dive | ✅ complete |
-| Robust loss / IRLS | `core/robust.py` | `04` | deep-dive | ✅ complete |
-| Model equivalence | `adapt/` | `05` | deep-dive | ✅ complete |
-| Stereo extrinsics | `calib/stereo.py` | `06` | — (roadmap only) | 🟡 example, no chapter |
-| Chart reprojection (sphere/cyl) | `ops/reproject.py` | `08` | deep-dive | 🟡 concept covered; doc predates the **library** module + cubemap/tangent |
-| **C1 · two-view geometry on rays** | `mvg/two_view.py` | — | — | ❌ none |
-| **C2 · robust relative pose (RANSAC)** | `mvg/ransac.py` | — | — | ❌ none |
-| **C4 · sphere-sweep stereo (depth)** | `stereo/sphere_sweep.py` | — | — | ❌ none |
-| **C5 · angular reprojection BA** | `mvg/bundle.py` | — | — | ❌ none |
-| **C6 · spherical rectification** | `stereo/rectify.py` | — | — | ❌ none |
-| **`estimate_relative_pose` end-to-end** | `mvg/` | — | — | ❌ none |
-| **Phase 1 · manifold pose opt (Lie)** | `core/lie.py` | — | — | ❌ none |
-| **Phase 2 · in-house manifold LM** | `core/optimize.py` | — | — | ❌ none |
-| **Schur-complement sparse BA** | `calib/bundle.py`, `core/` | — | — | ❌ none |
+Legend: ✅ present · ❌ missing · — n/a. "Figure" = embedded in the feature's own doc.
+
+| Feature (code shipped) | Module | Example | Learn doc | Figure | Status |
+|---|---|---|---|---|---|
+| Fisheye / camera models | `models/`, `model.py` | `01` | Ch.1 | ✅ `undistort_demo.gif` | ✅ complete |
+| Double Sphere model | `models/ds_math.py` | `02` | Ch.2 | ✅ pipeline + projection | ✅ complete |
+| Projection validity / >180° cone | `models/double_sphere.py` | `07` | Ch.3 | ✅ fov/coverage | ✅ complete |
+| Calibration capstone (AprilGrid → BA) | `calib/` | `03` | capstone + deep-dive | ✅ aprilgrid + reproj | ✅ complete |
+| AprilGrid detection deep-dive | `calib/detect.py` | `03` | `robust_aprilgrid_detection.md` | ❌ none in this doc | 🟡 doc ok; **no own figure** |
+| Robust loss / IRLS | `core/robust.py` | `04` | `robust_losses_and_evaluation.md` | ❌ none | 🟡 doc ok; **no figure** |
+| Model equivalence | `adapt/` | `05` | `are_two_models_the_same_camera.md` | ❌ none | 🟡 doc ok; **no figure** |
+| **Stereo extrinsics** | `calib/stereo.py` | `06` | `stereo_extrinsics_calibration.md` | ✅ `stereo_extrinsics_invariance.gif` | ✅ **complete (new)** |
+| Chart reprojection (sphere/cyl) | `ops/reproject.py` | `08` | deep-dive | ✅ morph + corners | 🟡 doc predates the **library** module + cubemap/tangent |
+| **C1 · two-view geometry on rays** | `mvg/two_view.py` | — | — | — | ❌ none |
+| **C2 · robust relative pose (RANSAC)** | `mvg/ransac.py` | — | — | — | ❌ none |
+| **C4 · sphere-sweep stereo (depth)** | `stereo/sphere_sweep.py` | — | — | — | ❌ none |
+| **C5 · angular reprojection BA** | `mvg/bundle.py` | — | — | — | ❌ none |
+| **C6 · spherical rectification** | `stereo/rectify.py` | — | — | — | ❌ none |
+| **`estimate_relative_pose` end-to-end** | `mvg/two_view.py` | — | — | — | ❌ none |
+| **Phase 1 · manifold pose opt (Lie)** | `core/lie.py` | — | — | — | ❌ none |
+| **Phase 2 · in-house manifold LM** | `core/optimize.py` | — | — | — | ❌ none |
+| **Schur-complement sparse BA** | `calib/bundle.py`, `core/` | — | — | — | ❌ none |
 
 ---
 
@@ -71,10 +88,20 @@ that stack exists — the README "path" diagram and chapter table end at the cap
 Ch.7 (reproducing a published calibration). All four have code anchors that already exist;
 only the write-ups are missing.
 
-**Gap B — Tier-1 is invisible and undocumented.** C1–C6 + the manifold-optimization refactor
-(Lie / in-house LM / sparse BA) have no chapters, no examples, and **no mention anywhere in
-the curriculum's navigation** (README path diagram, chapter table, mermaid graph all stop at
-the capstone).
+**Gap B — Tier-1 is undocumented** (*visibility half now fixed*). C1/C2 (two-view + RANSAC),
+C4 (sphere-sweep), C5 (angular BA), C6 (rectification), the `mvg` `estimate_relative_pose`, and
+the manifold-optimization refactor (Lie / in-house LM / sparse BA) still have **no chapters and
+no examples** (the examples directory stops at `08`). The *invisibility* sub-problem is resolved —
+the README/ROADMAP now split into Part I / Part II and surface the Tier-1 arc — but the teaching
+content itself is the open work. This is the **highest-leverage gap**: two-view pose, stereo depth,
+and Lie optimization are exactly the SLAM/SfM geometry 3D-vision roles screen for.
+
+**Gap D — figure coverage** *(new, from the 4th column)*. Three otherwise-complete deep-dives carry
+**no figure of their own**: `robust_losses_and_evaluation.md` (a loss-curve / IRLS-weight visual is
+the obvious candidate), `are_two_models_the_same_camera.md` (an overlay of the two models' projections
+agreeing), and `robust_aprilgrid_detection.md` (the AprilGrid GIF lives in the capstone, not here).
+None blocks the chapter, but each is a cheap, high-value `doc-illustrator` job. Apply the device rule —
+request an animation only where the *transition is the lesson*, else a static figure / small-multiple.
 
 **Gap C — partial/stale.** `spherical_and_cylindrical_reprojection.md` (the C3 deep-dive)
 predates the C3 *library* (`ops/reproject.py`) and covers only sphere+cylinder; the shipped
@@ -112,22 +139,24 @@ arc* — "from one calibrated camera to 3D structure." Proposal: keep the existi
 - **Ch.13 Charts as front-ends** (C3, upgrade Gap C) → re-point the existing deep-dive at
   `ops/reproject.py`, add cubemap + tangent images.
 
-### Navigation fixes (cheap, do regardless)
-- README: split the chapter table into Part I / Part II; add the Tier-1 rows.
-- README + ROADMAP: extend the mermaid "path" graph past the capstone into Part II.
-- Add a one-line "stereo extrinsics" chapter or fold `06` into Ch.10's neighborhood (it
-  currently has an example but no prose home).
+### Navigation fixes — ✅ DONE (2026-06-21)
+- ✅ README split into Part I / Part II with Tier-1 rows (commit `138f0d8`).
+- ✅ README + ROADMAP extended past the capstone into Part II.
+- ✅ Stereo extrinsics now has a prose home — `stereo_extrinsics_calibration.md`, linked from the
+  learn README deep-dives block. (`06` is no longer an orphaned example.)
 
 ---
 
 ## Recommended sequence
 
-1. **Navigation first** (hours) — make Tier-1 *visible* in the README/ROADMAP even before the
-   prose exists. Cheapest credibility win; stops the repo from understating itself.
-2. **Ch.8 + example `09`** (two-view geometry) — highest portfolio leverage, and the entry
-   point to Part II that everything else builds on.
-3. **Ch.9** (manifold optimization) — the most distinctive "I built the hard thing myself"
+0. ~~**Navigation first**~~ — ✅ **done** (Part I/II split shipped).
+0b. ~~**Stereo extrinsics**~~ — ✅ **done** (chapter + figure shipped through the full pipeline).
+1. **Ch.8 + example `09`** (two-view geometry) — **next.** Highest portfolio leverage, and the
+   entry point to Part II that everything else builds on. Anchor `mvg/two_view.py` + `mvg/ransac.py`.
+2. **Ch.9** (manifold optimization) — the most distinctive "I built the hard thing myself"
    story (in-house LM replacing scipy); memory already records the findings to draw from.
-4. Then Ch.11/12 (stereo depth), Ch.10 (scalable BA), Ch.13 (charts upgrade).
-5. Backfill Gap A (Ch.4–7) opportunistically — lower novelty, but they're promised and the
+3. Then Ch.11/12 (stereo depth), Ch.10 (scalable BA), Ch.13 (charts upgrade, closes Gap C).
+4. Backfill Gap A (Ch.4–7) opportunistically — lower novelty, but they're promised and the
    code already exists.
+5. **Gap D figures** (cheap, parallelizable) — backfill the three figure-less deep-dives whenever
+   convenient; each is a single `doc-illustrator` run.

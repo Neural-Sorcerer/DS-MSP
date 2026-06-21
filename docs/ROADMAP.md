@@ -43,8 +43,10 @@ code and a runnable real-data script:
 Extensions that turn "camera models" into "perception systems", each laptop-runnable on
 the public datasets already wired up:
 - **Stereo extrinsic calibration** ✅ — recovers `T_cam1_cam0` from TUM-VI's synced stereo
-  AprilGrid footage, matching the published `T_cn_cnm1` to **0.22° / ~1 mm**
-  (`examples/06_stereo_extrinsics_tumvi.py`). Next: **camera–IMU calibration** (`T_cam_imu`).
+  AprilGrid footage, matching the published `T_cn_cnm1` to **0.062° / 0.25 mm** (~0.2%
+  baseline; `--stride 8`, 55 frames). See the
+  [chapter](learn/stereo_extrinsics_calibration.md) and
+  `examples/06_stereo_extrinsics_tumvi.py`. Next: **camera–IMU calibration** (`T_cam_imu`).
 - **Monocular visual odometry** on EuRoC / TUM-VI, reusing the bundle adjuster; reported
   with standard ATE/RPE against ground truth.
 - **A C++ core** (pybind11) for the hot kernels, plus one Ceres/Eigen calibration.
