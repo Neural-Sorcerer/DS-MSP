@@ -30,6 +30,8 @@ dependencies = ["numpy", "opencv-python", "scipy", "pyyaml"]
 [project.urls]
 Homepage = "https://github.com/Munna-Manoj/DS-MSP"
 Repository = "https://github.com/Munna-Manoj/DS-MSP"
+Documentation = "https://github.com/Munna-Manoj/DS-MSP/tree/main/docs/learn"
+Changelog = "https://github.com/Munna-Manoj/DS-MSP/blob/main/CHANGELOG.md"
 Issues = "https://github.com/Munna-Manoj/DS-MSP/issues"
 
 # Optional extras. `calib` adds the AprilGrid detector used to calibrate from real

@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/ds-msp)](https://pypi.org/project/ds-msp/)
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSE)
 ![Tests](https://img.shields.io/badge/tests-237%20passing-brightgreen)
 
 A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) lenses — built around the
@@ -11,14 +11,14 @@ A clean, tested, **OpenCV-compatible** camera library for wide-FOV (fisheye) len
 calibration, model conversion, and hardware export. It doubles as a **guided, runnable course** in
 wide-FOV camera geometry.
 
-![Fisheye rectification demo](assets/undistort_demo.gif)
+![Fisheye rectification demo](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/undistort_demo.gif)
 
 > *A real fisheye frame (left) rectified to a pinhole view (right), sweeping the `balance` knob from
 > widest-FOV to tightest-crop. The bent ceiling lines and curved checkerboard straighten out.*
 
 > **Two ways in — pick yours:**
-> - 🎓 **Learn the geometry** → start the runnable curriculum in **[`docs/learn/`](docs/learn/README.md)**.
->   Each chapter prints a number you can verify; the **[🏆 capstone](docs/learn/capstone_calibrating_a_real_camera.md)**
+> - 🎓 **Learn the geometry** → start the runnable curriculum in **[`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md)**.
+>   Each chapter prints a number you can verify; the **[🏆 capstone](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/capstone_calibrating_a_real_camera.md)**
 >   calibrates a real fisheye from TUM-VI footage and matches the *published* intrinsics to **0.003 %** focal (0.08 px median).
 > - 🛠️ **Use the library** → jump to **[Installation](#installation)** and **[Quick start](#quick-start)**.
 
@@ -74,7 +74,7 @@ runs on a synthetic scene — each world point traced through its two spheres on
 plane to *form* the fisheye image, point by point. The render's geometry is cross-checked
 against the library itself (`std = 2e-16`), so the animation can't drift from the math:
 
-![Double Sphere image formation — 3D points projected through two spheres onto a fisheye image](assets/learn/double_sphere_pipeline.gif)
+![Double Sphere image formation — 3D points projected through two spheres onto a fisheye image](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/double_sphere_pipeline.gif)
 
 And the image doesn't have to live on a flat plane. Because a fisheye is fundamentally a map
 from **rays** to pixels, those rays can be stored equally on a **sphere**, a **cylinder**, or a
@@ -82,7 +82,7 @@ from **rays** to pixels, those rays can be stored equally on a **sphere**, a **c
 (round-trips to **1e-13 px**). The sphere is the *complete* model; the flat pinhole is the
 awkward special case that can't hold a >180° view. Watch one real fisheye morph through all three:
 
-![One real fisheye morphing through sphere, cylinder, and pinhole representations](assets/learn/sphere_cylinder_pinhole_morph.gif)
+![One real fisheye morphing through sphere, cylinder, and pinhole representations](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/sphere_cylinder_pinhole_morph.gif)
 
 > *Verticals stay straight on the cylinder; the pinhole keeps lines straight but balloons the
 > periphery and drops the polar cone to black — the >180° geometry has nowhere to land on a plane.*
@@ -94,15 +94,15 @@ intersection in all four images, and round-trips back to its raw pixel to **7e-1
 
 | Raw fisheye | Pinhole (gnomonic) |
 | :---: | :---: |
-| ![raw corners](assets/learn/corners_raw.png) | ![pinhole corners](assets/learn/corners_pinhole.png) |
+| ![raw corners](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/corners_raw.png) | ![pinhole corners](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/corners_pinhole.png) |
 | **Sphere (equirectangular)** | **Cylinder** |
-| ![sphere corners](assets/learn/corners_sphere.png) | ![cylinder corners](assets/learn/corners_cylinder.png) |
+| ![sphere corners](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/corners_sphere.png) | ![cylinder corners](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/learn/corners_cylinder.png) |
 
 > The board bows on the sphere, straightens on the pinhole, keeps verticals straight on the
 > cylinder — yet no corner ever leaves the checkerboard. Full derivation, the pixel↔pixel
 > formulas, and the per-representation round-trip table:
-> **[sphere/cylinder/pinhole deep-dive](docs/learn/spherical_and_cylindrical_reprojection.md)**
-> (`examples/08`). The 3D pipeline above is built in the [Simulation Studio](docs/WRITING_GUIDE.md#5-make-it-visual).
+> **[sphere/cylinder/pinhole deep-dive](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/spherical_and_cylindrical_reprojection.md)**
+> (`examples/08`). The 3D pipeline above is built in the [Simulation Studio](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/WRITING_GUIDE.md#5-make-it-visual).
 
 ---
 
@@ -165,9 +165,9 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 | Path | Contents |
 | :-- | :-- |
 | [`ds_msp/`](ds_msp) | The library: `core/` (contracts + Lie/LM solver + robust kernels) → pure math → `models/` → services (`ops/`, `adapt/`, `io/`, `calib/`) → 3D stack (`mvg/` two-view geometry, `stereo/` depth), plus `cv.py` (OpenCV-style API) and `ldc.py` (hardware export). |
-| [`examples/`](examples) | Eight runnable demos on real data (`01`–`08`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence, stereo extrinsics, the >180° validity cone, and sphere/cylinder/pinhole reprojection. *(Part II / Tier-1 demos landing — see [ROADMAP](docs/ROADMAP.md).)* |
-| [`docs/learn/`](docs/learn/README.md) | The guided curriculum (start here to learn) — Part I (calibration) + Part II (geometry & 3D). |
-| [`docs/`](docs) | [`MULTI_MODEL.md`](docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](docs/ROADMAP.md), [`WRITING_GUIDE.md`](docs/WRITING_GUIDE.md) (docs style guide), [`research/`](docs/research) (Tier-1 spec + audits). |
+| [`examples/`](examples) | Eight runnable demos on real data (`01`–`08`) — round-trip precision, the calibration capstone, robust-loss A/B, model equivalence, stereo extrinsics, the >180° validity cone, and sphere/cylinder/pinhole reprojection. *(Part II / Tier-1 demos landing — see [ROADMAP](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md).)* |
+| [`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md) | The guided curriculum (start here to learn) — Part I (calibration) + Part II (geometry & 3D). |
+| [`docs/`](docs) | [`MULTI_MODEL.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md), [`WRITING_GUIDE.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/WRITING_GUIDE.md) (docs style guide), [`research/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/research) (Tier-1 spec + audits). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
 | [`tests/`](tests) | 237 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
 
@@ -184,13 +184,13 @@ graph TD
     models -. implements .-> core
 ```
 
-*(Full diagram and design guarantees in [`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md#6-architecture--design-guarantees).)*
+*(Full diagram and design guarantees in [`docs/MULTI_MODEL.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/MULTI_MODEL.md#6-architecture--design-guarantees).)*
 
 ---
 
 ## Learn: the guided curriculum
 
-If you want to *understand* wide-FOV geometry (not just call it), the **[`docs/learn/`](docs/learn/README.md)**
+If you want to *understand* wide-FOV geometry (not just call it), the **[`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md)**
 track teaches it on real public data — every chapter prints a number you can verify. It runs in
 two arcs: **Part I — Calibration** (take one camera to a published-grade calibration) and
 **Part II — Geometry & 3D** (take that camera out into the world: two-view pose, manifold
@@ -200,17 +200,17 @@ optimization, stereo depth).
 
 | # | Lesson | You'll be able to… |
 | :-- | :-- | :-- |
-| 1 | [Fisheye & camera models](docs/learn/01_fisheye_and_camera_models.md) | load a published calibration, prove project/unproject invert to ~1e-14 px, rectify a real frame |
-| 2 | [The Double Sphere model](docs/learn/02_double_sphere_model.md) | derive DS from first principles and read it in code |
-| 🏆 | [**Capstone: calibrate a real camera**](docs/learn/capstone_calibrating_a_real_camera.md) | detect AprilGrid corners (multi-scale, periphery-robust), bundle-adjust, and **match TUM-VI's published intrinsics to 0.003 %** focal |
-| 🔬 | [Detecting every AprilGrid tag (fisheye periphery)](docs/learn/robust_aprilgrid_detection.md) | why an off-centre board drops to 4/36 tags, and the multi-scale + recovery fix (focal 0.7%→0.003%) |
-| 🔬 | [Robust losses & evaluation](docs/learn/robust_losses_and_evaluation.md) | handle outliers without discarding data; why median/inlier RMS beat naive RMS |
-| 🔬 | [Are two models the same camera?](docs/learn/are_two_models_the_same_camera.md) | prove DS `fx≈152` and KB `fx≈191` describe the same lens |
-| 🔬 | [Sphere, cylinder & pinhole reprojection](docs/learn/spherical_and_cylindrical_reprojection.md) | move one fisheye between a sphere, cylinder, and pinhole image — exact pixel maps, verified to 1e-13 px |
+| 1 | [Fisheye & camera models](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/01_fisheye_and_camera_models.md) | load a published calibration, prove project/unproject invert to ~1e-14 px, rectify a real frame |
+| 2 | [The Double Sphere model](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/02_double_sphere_model.md) | derive DS from first principles and read it in code |
+| 🏆 | [**Capstone: calibrate a real camera**](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/capstone_calibrating_a_real_camera.md) | detect AprilGrid corners (multi-scale, periphery-robust), bundle-adjust, and **match TUM-VI's published intrinsics to 0.003 %** focal |
+| 🔬 | [Detecting every AprilGrid tag (fisheye periphery)](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/robust_aprilgrid_detection.md) | why an off-centre board drops to 4/36 tags, and the multi-scale + recovery fix (focal 0.7%→0.003%) |
+| 🔬 | [Robust losses & evaluation](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/robust_losses_and_evaluation.md) | handle outliers without discarding data; why median/inlier RMS beat naive RMS |
+| 🔬 | [Are two models the same camera?](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/are_two_models_the_same_camera.md) | prove DS `fx≈152` and KB `fx≈191` describe the same lens |
+| 🔬 | [Sphere, cylinder & pinhole reprojection](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/spherical_and_cylindrical_reprojection.md) | move one fisheye between a sphere, cylinder, and pinhole image — exact pixel maps, verified to 1e-13 px |
 
 **Part II — Geometry & 3D** — *the wide-FOV SLAM/SfM stack. Library shipped & tested
 (`ds_msp/mvg/`, `ds_msp/core/`, `ds_msp/stereo/`); chapters + runnable examples landing now —
-see [`docs/learn/`](docs/learn/README.md) and the [ROADMAP](docs/ROADMAP.md).* Two-view geometry on bearing vectors, manifold (SO(3)/SE(3))
+see [`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md) and the [ROADMAP](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md).* Two-view geometry on bearing vectors, manifold (SO(3)/SE(3))
 pose optimization with an in-house LM solver, Schur-complement bundle adjustment, and sphere-sweep
 stereo depth straight on raw fisheye.
 
@@ -219,7 +219,7 @@ stereo depth straight on raw fisheye.
 ## Using the library
 
 > Full multi-model cookbook (every operation, on every model) lives in
-> **[`docs/MULTI_MODEL.md`](docs/MULTI_MODEL.md)**. The essentials:
+> **[`docs/MULTI_MODEL.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/MULTI_MODEL.md)**. The essentials:
 
 ### Create a camera
 
@@ -335,7 +335,7 @@ mesh_lut, K_new = res["mesh_lut"], res["K_new"]  # int16 Q3 displacements + rect
 Two paths, depending on your data:
 
 **1 — The modern, generic calibrator** (`ds_msp.calib`) works for *any* model and is what the
-[capstone](docs/learn/capstone_calibrating_a_real_camera.md) uses on real TUM-VI AprilGrid footage:
+[capstone](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/capstone_calibrating_a_real_camera.md) uses on real TUM-VI AprilGrid footage:
 
 ```python
 import glob
@@ -356,7 +356,7 @@ result = calibrate(seed, X_world, keypoints, visibility, loss="cauchy", f_scale=
 print(result["rms_px"])      # sub-pixel; the capstone reports 0.08 px median, matching the published calibration
 ```
 
-See the full walk-through in the **[calibration capstone](docs/learn/capstone_calibrating_a_real_camera.md)**.
+See the full walk-through in the **[calibration capstone](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/capstone_calibrating_a_real_camera.md)**.
 
 **2 — The bundled Double Sphere script** calibrates from COCO-style checkerboard annotations:
 
@@ -385,8 +385,8 @@ Verified on real data (`assets/test_image.jpg`, `assets/test_image_96.jpg`):
 
 | Distorted | Undistorted (crop) | Undistorted (whole) | Undistorted (zoom) |
 | :---: | :---: | :---: | :---: |
-| ![Distorted](assets/result_distorted_11.jpg) | ![Crop](assets/result_undistort_crop_11.jpg) | ![Whole](assets/result_undistort_whole_11.jpg) | ![Zoom](assets/result_undistort_zoom_11.jpg) |
-| ![Distorted](assets/result_distorted_96.jpg) | ![Crop](assets/result_undistort_crop_96.jpg) | ![Whole](assets/result_undistort_whole_96.jpg) | ![Zoom](assets/result_undistort_zoom_96.jpg) |
+| ![Distorted](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_distorted_11.jpg) | ![Crop](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_crop_11.jpg) | ![Whole](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_whole_11.jpg) | ![Zoom](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_zoom_11.jpg) |
+| ![Distorted](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_distorted_96.jpg) | ![Crop](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_crop_96.jpg) | ![Whole](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_whole_96.jpg) | ![Zoom](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/result_undistort_zoom_96.jpg) |
 
 - **Crop (`balance=1.0`)** — keeps only center-valid pixels: no black borders, less FOV.
 - **Whole (`balance=0.0`)** — keeps all pixels that map to the plane: full content, black borders.
@@ -434,7 +434,7 @@ for all $r^2$ when $\alpha \le 0.5$, and for $r^2 \le 1/(2\alpha-1)$ when $\alph
 
 ### The FOV zones
 
-![FOV Zones Augmented](assets/fov_zones_augmented.jpg)
+![FOV Zones Augmented](https://raw.githubusercontent.com/Munna-Manoj/DS-MSP/main/assets/fov_zones_augmented.jpg)
 
 - **Green (frontal, `θ < 90°`)** — safe for standard pinhole projection.
 - **Yellow (side/back, `90° ≤ θ < θ_limit`)** — valid in DS, but impossible to project into a single
@@ -493,7 +493,7 @@ Wrap `ds_msp.cv.undistortImage` in a node: subscribe to `image_raw`, undistort, 
 
 DS-MSP is actively growing from a camera library into a small perception toolkit (multi-camera &
 camera-IMU calibration, visual odometry on public benchmarks, a C++/Ceres core, inference-only learned
-3D). See **[`docs/ROADMAP.md`](docs/ROADMAP.md)** for the build order and design rules.
+3D). See **[`docs/ROADMAP.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md)** for the build order and design rules.
 
 ---
 
@@ -531,4 +531,4 @@ This project builds on excellent open-source work and research.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSE).
