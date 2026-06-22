@@ -2,9 +2,15 @@
 # Pinned so a new tool release can't turn CI red without an intentional bump
 # (e.g. mypy 2.x's stricter checks, or a new ruff rule set). Bump deliberately.
 # Runtime deps (numpy, opencv-python, scipy) stay UNpinned in pyproject.toml —
-# a library should not over-constrain its consumers.
+# a library should not over-constrain its consumers. The ONE exception is numpy
+# below: its type stubs feed `mypy ds_msp/core`, so an unpinned numpy release can
+# turn CI red with zero code changes (numpy 2.5.0, published 2026-06-21, broke the
+# typed-core check this way). Pinning it here keeps CI reproducible without
+# constraining consumers (pyproject keeps numpy unpinned at runtime). Bump
+# deliberately once core is verified against the newer stubs.
 pytest~=9.1
 pytest-cov~=7.1
 mypy==2.1.0
 ruff==0.15.18
 import-linter==2.11
+numpy==2.4.6
