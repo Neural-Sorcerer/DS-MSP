@@ -5,12 +5,14 @@
 # a library should not over-constrain its consumers. The ONE exception is numpy
 # below: its type stubs feed `mypy ds_msp/core`, so an unpinned numpy release can
 # turn CI red with zero code changes (numpy 2.5.0, published 2026-06-21, broke the
-# typed-core check this way). Pinning it here keeps CI reproducible without
-# constraining consumers (pyproject keeps numpy unpinned at runtime). Bump
-# deliberately once core is verified against the newer stubs.
+# typed-core check this way). An upper bound — not an exact pin — because the test
+# matrix spans py3.10 (numpy dropped 3.10 in 2.3, so it resolves 2.2.x there)
+# through py3.12 (resolves 2.4.x). `<2.5` excludes the stub-breaking release while
+# letting each Python pick its latest compatible wheel. Dev/CI only; pyproject
+# keeps numpy unpinned for consumers. Lift the bound once core is verified vs 2.5.
 pytest~=9.1
 pytest-cov~=7.1
 mypy==2.1.0
 ruff==0.15.18
 import-linter==2.11
-numpy==2.4.6
+numpy<2.5
