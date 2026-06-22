@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0](https://github.com/Munna-Manoj/DS-MSP/compare/v0.5.0...v0.6.0) (2026-06-22)
+
+
+### Features
+
+* **web:** interactive multi-model camera studio + Pages deploy ([4940cac](https://github.com/Munna-Manoj/DS-MSP/commit/4940cac540ef1b3837e0547e95f3e1e2063827e9))
+* **web:** interactive multi-model camera studio + Pages deploy ([771d3da](https://github.com/Munna-Manoj/DS-MSP/commit/771d3daa624d12dd85c44903dfa4db737a22698c))
+
+
+### Documentation
+
+* remove internal/conversational content from public docs ([#24](https://github.com/Munna-Manoj/DS-MSP/issues/24)) ([f00f413](https://github.com/Munna-Manoj/DS-MSP/commit/f00f4134da795a965d680e1dbd599481646c3965))
+
 ## [0.5.0](https://github.com/Munna-Manoj/DS-MSP/compare/v0.4.0...v0.5.0) (2026-06-21)
 
 
