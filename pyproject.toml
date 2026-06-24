@@ -51,6 +51,7 @@ testpaths = ["tests"]
 markers = [
     "jac: analytic-Jacobian gradient-check tests (run on every model PR)",
     "contract: model-agnostic contract suite",
+    "slow: long-running statistical tests (e.g. rig model-agnosticism)",
 ]
 
 [tool.ruff]
@@ -61,7 +62,10 @@ target-version = "py310"
 extend-exclude = ["web"]
 
 [tool.mypy]
-python_version = "3.10"
+# Parse target is 3.12 so mypy can read typeshed/numpy's PEP 695 `type` stubs
+# (mypy 2.1.0 ties `type`-statement parsing to python_version >= 3.12). Real
+# 3.10 runtime compatibility stays enforced by the pytest matrix (3.10/3.11/3.12).
+python_version = "3.12"
 warn_unused_ignores = true
 # Tighten per-module as the typed surface grows; core/ is fully typed.
 [[tool.mypy.overrides]]

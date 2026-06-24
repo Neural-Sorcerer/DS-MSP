@@ -111,6 +111,27 @@ def save_kalibr(model, path: str, width: int, height: int, cam: str = "cam0") ->
         yaml.safe_dump(data, f, default_flow_style=None, sort_keys=False)
 
 
+def save_kalibr_rig(rig, path: str, *, cam_order=None) -> None:
+    """Write a full multi-camera Kalibr camchain: per-camera intrinsics + the chained
+    extrinsics ``T_cn_cnm1`` (transform from the previous camera into this one).
+
+    ``rig`` is a ``ds_msp.rig.RigState``; its ``T_c_g[c]`` is the projection extrinsic
+    (group-ref -> camera). Kalibr wants ``T_cam_n_cam_{n-1} = T_c_g[n] @ inv(T_c_g[n-1])``.
+    ``cam_order`` defaults to the sorted camera ids.
+    """
+    order = list(cam_order) if cam_order is not None else sorted(rig.cameras)
+    data = {}
+    for i, cid in enumerate(order):
+        w, h = rig.img_size.get(cid, (0, 0))
+        block = to_kalibr_cam(rig.cameras[cid], w, h)
+        if i > 0:
+            T = rig.T_c_g[cid] @ np.linalg.inv(rig.T_c_g[order[i - 1]])
+            block["T_cn_cnm1"] = [list(map(float, row)) for row in T]
+        data[f"cam{i}"] = block
+    with open(path, "w") as f:
+        yaml.safe_dump(data, f, default_flow_style=None, sort_keys=False)
+
+
 def load_kalibr(path: str, cam: str = "cam0"):
     """Read a model from a Kalibr camchain YAML file.
 

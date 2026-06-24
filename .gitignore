@@ -46,3 +46,10 @@ docs/research/doc_excellence_spec.md
 
 # Local detection/repro experiments (use datasets, not shipped).
 /experiments/
+
+# Internal calibration research reports (LOCAL-ONLY, never committed).
+# Contains proprietary third-party camera-rig calibration data (vendor models,
+# multi-sensor extrinsics) used to study model conversion. Keep out of GitHub.
+/reports/
+# Scratch diagnostics dropped in the repo root during investigations.
+/diag_*.py

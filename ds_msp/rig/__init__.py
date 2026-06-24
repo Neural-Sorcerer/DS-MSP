@@ -1,0 +1,20 @@
+"""Multi-camera rig calibration — the N-camera analogue of MC-Calib.
+
+DS-MSP's single-camera, multi-model intrinsics (``calib.bundle``) and two-view MVG
+(``mvg``) are extended here to a full rig: many cameras + many planar boards observed
+over many frames, fused into one consistent set of extrinsics + intrinsics.
+
+The math is **model-agnostic** — every routine composes poses and calls a
+``CameraModel``'s ``project`` / ``unproject`` / ``project_jacobian``. So the entire
+pipeline works for any of DS-MSP's six models, exactly as it is in MC-Calib.
+
+See ``docs/RIG_CALIBRATION_PLAN.md`` (what/where) and
+``docs/RIG_CALIBRATION_IMPLEMENTATION.md`` (how) for the design.
+"""
+
+from __future__ import annotations
+
+from .types import BoardObs, Object3D, ObjectObs, RigState
+from .rig_calibrate import calibrate_rig
+
+__all__ = ["BoardObs", "Object3D", "ObjectObs", "RigState", "calibrate_rig"]
