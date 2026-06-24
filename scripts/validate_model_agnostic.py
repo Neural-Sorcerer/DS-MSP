@@ -64,7 +64,7 @@ def _rel(Tref, Ti):
 
 
 def _trial(model_name, model_cls, seed, noise_px):
-    obj, obs, img, gt, gtm = make_rig(n_cam=3, n_frame=50, noise_px=noise_px,
+    obj, obs, img, gt, gtm = make_rig(n_cam=3, n_frame=60, noise_px=noise_px,
                                       seed=seed, w=W, h=H,
                                       model_factory=_factory(model_name))
     rig = calibrate_rig(obj, obs, img, fix_intrinsics=False,

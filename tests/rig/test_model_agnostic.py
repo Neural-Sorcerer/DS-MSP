@@ -59,7 +59,7 @@ def _rel(Tref, Ti):
 
 
 def _trial_error(name, cls, seed):
-    obj, obs, img, gt, _ = make_rig(n_cam=3, n_frame=50, noise_px=NOISE_PX, seed=seed,
+    obj, obs, img, gt, _ = make_rig(n_cam=3, n_frame=60, noise_px=NOISE_PX, seed=seed,
                                     w=W, h=H, model_factory=_factory(name))
     rig = calibrate_rig(obj, obs, img, fix_intrinsics=False,
                         front_end=make_bundle_front_end(cls))

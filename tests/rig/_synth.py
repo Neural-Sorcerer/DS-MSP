@@ -37,7 +37,7 @@ def make_object(board_poses: Dict[int, np.ndarray], nx=4, ny=4, pitch=0.1) -> Ob
 
 
 def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
-             multi_board=True, model_factory=None
+             multi_board=True, model_factory=None, outlier_frac=0.0, outlier_px=40.0
              ) -> Tuple[Object3D, List[ObjectObs], Dict, Dict, Dict]:
     """Return ``(object, object_obs, img_size, gt_extrinsics, gt_models)``.
 
@@ -46,6 +46,8 @@ def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
 
     ``model_factory(cam_id, rng) -> CameraModel`` lets the caller represent cameras with
     any model (DS/UCM/EUCM/KB/...) to exercise model-agnosticism. Defaults to RadTan.
+    ``outlier_frac`` corrupts that fraction of detections with a gross ``outlier_px`` shift
+    (mis-decoded corners) to exercise robust weighting.
     """
     rng = np.random.default_rng(seed)
     f = 800.0
@@ -99,6 +101,9 @@ def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
                 continue
             pts = uv[rows] + (rng.normal(scale=noise_px, size=(len(rows), 2))
                               if noise_px else 0.0)
+            if outlier_frac:
+                bad = rng.random(len(rows)) < outlier_frac
+                pts[bad] += rng.uniform(-outlier_px, outlier_px, size=(int(bad.sum()), 2))
             object_obs.append(ObjectObs(cam_id=c, frame_id=fr, object_id=0,
                                         point_rows=rows, pts_2d=pts))
     img_size = {c: (w, h) for c in range(n_cam)}

@@ -22,7 +22,7 @@ import numpy as np
 
 from ..calib.bundle import _skew_batch
 from ..core.lie import so3_exp
-from ..core.optimize import lm_solve
+from ..core.optimize import lm_solve, schur_lm
 from .types import ObjectObs, RigState
 
 Key = Tuple[int, int]
@@ -171,30 +171,183 @@ def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
     return _state_from_rig(rig), residual, jacobian, retract, K
 
 
+def _obs_blocks(model, R_cam, R_obj, Xo, Xg, Xc, pts_2d, want_intr):
+    """Per-observation residual + Jacobian blocks, the single source of the BA chain
+    (board baked into Xo): returns ``(r (2N,), Jw_o, Jt_o (2N,3), Jw_c, Jt_c (2N,3),
+    J_param (2N,P) or None)``. Object pose: ∂Xc/∂ω = R_cam R_obj(-[Xo]_x), ∂Xc/∂t = R_cam.
+    Camera: ∂Xc/∂ω = -R_cam[Xg]_x, ∂Xc/∂t = I."""
+    N = len(Xo)
+    uv, J_point, J_param, valid = model.project_jacobian(Xc)
+    mask = valid[:, None, None].astype(float)
+    Jp = J_point * mask
+    r = np.zeros((N, 2))
+    r[valid] = uv[valid] - pts_2d[valid]
+    dXc_dw_o = -np.einsum('ij,njk->nik', R_cam @ R_obj, _skew_batch(Xo))
+    Jw_o = np.einsum('nij,njc->nic', Jp, dXc_dw_o).reshape(2 * N, 3)
+    Jt_o = np.einsum('nij,jc->nic', Jp, R_cam).reshape(2 * N, 3)
+    dXc_dw_c = -np.einsum('ij,njk->nik', R_cam, _skew_batch(Xg))
+    Jw_c = np.einsum('nij,njc->nic', Jp, dXc_dw_c).reshape(2 * N, 3)
+    Jt_c = Jp.reshape(2 * N, 3)
+    Jpar = (J_param * mask).reshape(2 * N, -1) if want_intr else None
+    return r.ravel(), Jw_o, Jt_o, Jw_c, Jt_c, Jpar
+
+
+def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
+                        fix_intrinsics: bool = True):
+    """Assemble the rig BA for :func:`core.optimize.schur_lm`, mapping the **per-frame
+    object poses to the eliminated block-diagonal ``local`` blocks** and
+    ``{camera extrinsics, intrinsics}`` to the ``shared`` block.
+
+    Each reprojection residual touches exactly one object pose (its frame) plus a slice of
+    the shared state, so the Hessian is the block-arrow that the Schur trick collapses:
+    eliminate every 6-DoF object pose with a 6×6 inverse, solve the small shared system,
+    back-substitute. This is the sparse analogue of the dense :func:`build_problem` and
+    the source of the speed-up on rigs with many frames (v-slam Ch.8 / lio-slam SMW).
+
+    Returns ``(state0, residual, linearize, retract, shared_dim, n_groups)``.
+    """
+    ref_cam = rig.ref_cam_id
+    cam_ids = [c for c in sorted(rig.cameras) if c != ref_cam]
+    classes = {c: type(rig.cameras[c]) for c in rig.cameras}
+    Pn = {c: len(classes[c].param_names) for c in rig.cameras}
+    bounds = {c: classes[c].param_bounds() for c in rig.cameras}
+
+    # shared layout: non-ref camera extrinsics, then (optionally) per-camera intrinsics
+    col, cam_col, intr_col = 0, {}, {}
+    for c in cam_ids:
+        cam_col[c] = col; col += 6
+    if not fix_intrinsics:
+        for c in sorted(rig.cameras):
+            intr_col[c] = col; col += Pn[c]
+    shared_dim = col
+
+    # groups = object poses; gather each group's observations once
+    groups = sorted(rig.object_poses)
+    gobs = {k: [] for k in groups}
+    for o in object_obs:
+        k = (o.object_id, o.frame_id)
+        if o.cam_id in rig.cameras and k in rig.object_poses:
+            gobs[k].append((o, rig.objects[o.object_id].pts_3d[o.point_rows]))
+    n_groups = len(groups)
+
+    def _models(state):
+        return {c: classes[c].from_params(state["intr"][c]) for c in rig.cameras}
+
+    def _xc(state, o, Xo, key):
+        Xg = (state["obj_R"][key] @ Xo.T).T + state["obj_t"][key]
+        Xc = (state["cam_R"][o.cam_id] @ Xg.T).T + state["cam_t"][o.cam_id]
+        return Xg, Xc
+
+    def residual(state):
+        mc = _models(state)
+        out = []
+        for k in groups:
+            for o, Xo in gobs[k]:
+                _, Xc = _xc(state, o, Xo, k)
+                uv, valid = mc[o.cam_id].project(Xc)
+                d = np.zeros_like(o.pts_2d)
+                d[valid] = uv[valid] - o.pts_2d[valid]
+                out.append(d.ravel())
+        return np.concatenate(out) if out else np.zeros(0)
+
+    def linearize(state):
+        mc = _models(state)
+        r_list, A_list, B_list = [], [], []
+        for k in groups:
+            R_obj = state["obj_R"][k]
+            rs, As, Bs = [], [], []
+            for o, Xo in gobs[k]:
+                cam = o.cam_id
+                Xg, Xc = _xc(state, o, Xo, k)
+                r, Jw_o, Jt_o, Jw_c, Jt_c, Jpar = _obs_blocks(
+                    mc[cam], state["cam_R"][cam], R_obj, Xo, Xg, Xc, o.pts_2d,
+                    not fix_intrinsics)
+                m = len(r)
+                A = np.zeros((m, shared_dim))
+                if cam in cam_col:
+                    cc = cam_col[cam]
+                    A[:, cc:cc + 3] = Jw_c
+                    A[:, cc + 3:cc + 6] = Jt_c
+                if not fix_intrinsics:
+                    ic = intr_col[cam]
+                    A[:, ic:ic + Pn[cam]] = Jpar
+                B = np.empty((m, 6))
+                B[:, :3] = Jw_o
+                B[:, 3:] = Jt_o
+                rs.append(r); As.append(A); Bs.append(B)
+            r_list.append(np.concatenate(rs))
+            A_list.append(np.vstack(As))
+            B_list.append(np.vstack(Bs))
+        return r_list, A_list, B_list
+
+    def retract(state, d_shared, d_local):
+        s = dict(state)
+        s["cam_R"], s["cam_t"] = dict(state["cam_R"]), dict(state["cam_t"])
+        s["obj_R"], s["obj_t"] = dict(state["obj_R"]), dict(state["obj_t"])
+        s["intr"] = dict(state["intr"])
+        for c in cam_ids:
+            o = cam_col[c]
+            s["cam_R"][c] = state["cam_R"][c] @ so3_exp(d_shared[o:o + 3])
+            s["cam_t"][c] = state["cam_t"][c] + d_shared[o + 3:o + 6]
+        if not fix_intrinsics:
+            for c in sorted(rig.cameras):
+                ic = intr_col[c]
+                lb, ub = bounds[c]
+                s["intr"][c] = np.clip(state["intr"][c] + d_shared[ic:ic + Pn[c]], lb, ub)
+        for i, k in enumerate(groups):
+            s["obj_R"][k] = state["obj_R"][k] @ so3_exp(d_local[i, :3])
+            s["obj_t"][k] = state["obj_t"][k] + d_local[i, 3:]
+        return s
+
+    return _state_from_rig(rig), residual, linearize, retract, shared_dim, n_groups
+
+
 def refine(rig: RigState, object_obs: List[ObjectObs], *,
            fix_intrinsics: bool = True, max_iter: int = 60,
-           huber_px: float = 1.0, verbose: bool = False) -> RigState:
+           robust_kernel: str = "huber", robust_scale="auto", gnc_iters: int = 0,
+           gnc_start: float = 0.0, verbose: bool = False, sparse: bool = True) -> RigState:
     """One BA pass. Returns a refined copy of ``rig``.
 
     ``fix_intrinsics=True`` reproduces ``refineCameraGroupAndObjects`` (poses only);
     ``False`` reproduces ``refineCameraGroupAndObjectsAndIntrinsics`` (full joint).
+
+    **Robust weighting, no rejection.** Every observation is kept; outliers are
+    down-weighted by IRLS (``w = ρ'(r)/r``). ``robust_scale="auto"`` re-estimates the
+    inlier scale by MAD each iteration so the kernel adapts to the actual noise instead of
+    a hand-set pixel threshold. A redescending ``cauchy`` kernel mutes gross outliers
+    smoothly; ``gnc_iters>0`` anneals the scale from ``gnc_start`` down (graduated
+    non-convexity) so the redescending fit cannot get trapped by a bad initial residual.
+
+    ``sparse=True`` (default) Schur-eliminates the per-frame object poses
+    (:func:`build_schur_problem` + :func:`core.optimize.schur_lm`); ``sparse=False`` uses
+    the dense solver (kept for tests).
     """
-    state0, residual, jacobian, retract, K = build_problem(
-        rig, object_obs, fix_intrinsics=fix_intrinsics)
-    if K == 0:
-        return rig
-    res = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_iter,
-                   robust_kernel="huber", robust_scale=huber_px)
+    rk = dict(robust_kernel=robust_kernel, robust_scale=robust_scale,
+              gnc_iters=gnc_iters, gnc_start=gnc_start)
+    if sparse:
+        state0, residual, linearize, retract, shared_dim, n_groups = build_schur_problem(
+            rig, object_obs, fix_intrinsics=fix_intrinsics)
+        if shared_dim == 0 or n_groups == 0:           # nothing shared to solve -> dense
+            return refine(rig, object_obs, fix_intrinsics=fix_intrinsics, max_iter=max_iter,
+                          verbose=verbose, sparse=False, **rk)
+        res = schur_lm(state0, residual, linearize, retract, n_groups=n_groups,
+                       shared_dim=shared_dim, local_dim=6, block=2, max_iter=max_iter, **rk)
+    else:
+        state0, residual, jacobian, retract, K = build_problem(
+            rig, object_obs, fix_intrinsics=fix_intrinsics)
+        if K == 0:
+            return rig
+        res = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_iter, **rk)
     if verbose:
         print(f"  BA: rms {res.rms:.4f}px iters={res.iterations} "
-              f"intr={'free' if not fix_intrinsics else 'fixed'}")
+              f"intr={'free' if not fix_intrinsics else 'fixed'} "
+              f"{'sparse' if sparse else 'dense'} kernel={robust_kernel}")
     return _rig_from_state(rig, res.state)
 
 
-def reprojection_rms(rig: RigState, object_obs: List[ObjectObs]) -> Dict[int, float]:
-    """Per-camera reprojection RMS (px) over all observations — the report metric."""
-    sq: Dict[int, float] = {}
-    cnt: Dict[int, int] = {}
+def _per_obs_errors(rig: RigState, object_obs: List[ObjectObs]) -> Dict[int, np.ndarray]:
+    """Per-camera array of per-point reprojection errors (px)."""
+    errs: Dict[int, list] = {}
     for o in object_obs:
         if o.cam_id not in rig.cameras:
             continue
@@ -205,7 +358,34 @@ def reprojection_rms(rig: RigState, object_obs: List[ObjectObs]) -> Dict[int, fl
         Xg = (rig.object_poses[key][:3, :3] @ Xo.T).T + rig.object_poses[key][:3, 3]
         Xc = (rig.T_c_g[o.cam_id][:3, :3] @ Xg.T).T + rig.T_c_g[o.cam_id][:3, 3]
         uv, valid = rig.cameras[o.cam_id].project(Xc)
-        d = uv[valid] - o.pts_2d[valid]
-        sq[o.cam_id] = sq.get(o.cam_id, 0.0) + float((d * d).sum())
-        cnt[o.cam_id] = cnt.get(o.cam_id, 0) + int(valid.sum())
-    return {c: float(np.sqrt(sq[c] / cnt[c])) if cnt.get(c) else float("nan") for c in sq}
+        errs.setdefault(o.cam_id, []).append(
+            np.linalg.norm(uv[valid] - o.pts_2d[valid], axis=1))
+    return {c: np.concatenate(v) if v else np.zeros(0) for c, v in errs.items()}
+
+
+def reprojection_rms(rig: RigState, object_obs: List[ObjectObs]) -> Dict[int, float]:
+    """Per-camera reprojection RMS (px) over all observations."""
+    return {c: float(np.sqrt(np.mean(e ** 2))) if len(e) else float("nan")
+            for c, e in _per_obs_errors(rig, object_obs).items()}
+
+
+def reprojection_metrics(rig: RigState, object_obs: List[ObjectObs],
+                         inlier_px: float = 1.0) -> Dict[int, dict]:
+    """Per-camera **robust** reprojection metrics. Naive all-corner RMS lies on a robust
+    fit — it scores the size of the outliers the model deliberately down-weighted
+    (docs/learn/robust_losses_and_evaluation.md). Report instead: ``median`` (50% break-
+    down), ``inlier_rms`` (RMS over corners under ``inlier_px``), and ``inlier_frac``."""
+    out = {}
+    for c, e in _per_obs_errors(rig, object_obs).items():
+        if not len(e):
+            out[c] = dict(median=float("nan"), inlier_rms=float("nan"), inlier_frac=0.0,
+                          rms=float("nan"))
+            continue
+        inl = e < inlier_px
+        out[c] = dict(
+            median=float(np.median(e)),
+            inlier_rms=float(np.sqrt(np.mean(e[inl] ** 2))) if inl.any() else float("nan"),
+            inlier_frac=float(inl.mean()),
+            rms=float(np.sqrt(np.mean(e ** 2))),
+        )
+    return out

@@ -642,6 +642,67 @@ Notes from establishing this (each a real robustness fix, not test-tuning):
 - Two latent bugs surfaced and were fixed: a div-by-zero in RANSAC-PnP's adaptive iteration count at
   tiny inlier fractions, and `solvePnP` DLT requiring ≥6 points (now guarded for partial views).
 
+## 13d. Optimization pass — faster, robust, model-aware (2026-06-25)
+
+A second pass made the pipeline faster, more robust, and geometrically principled, drawing
+techniques from the two SLAM references (v-slam = Gao "Introduction to Visual SLAM";
+lio-slam = Gao "SLAM in Robotics and Autonomous Driving") and DS-MSP's own learn docs.
+
+### Speed — Schur-complement bundle adjustment
+
+The global BA dominated runtime (53–82 %, scaling with the dense tangent dimension `K`,
+which is mostly per-frame object poses). The dense `H Δ = g` solve is `O(K³)`. We exploit
+the **block-arrow structure** (v-slam Ch.8 Schur trick / lio-slam Ch.8 Sherman–Morrison–
+Woodbury): each residual touches exactly one object pose, so the object poses form the
+block-diagonal "landmark" block. `rig.ba.build_schur_problem` maps them to
+`core.optimize.schur_lm`'s eliminated `local` blocks and `{camera extrinsics, intrinsics}`
+to the `shared` block; the solver eliminates every 6-DoF object pose with a 6×6 inverse and
+solves the small shared system. **Result: BA 2.6× (medium) to 4.3× (large) faster,
+end-to-end 1.8–2.5× (45–60 %), bit-identical to the dense path** (max pose difference
+4.7e-10). The analytic SE(3) Jacobian chain (`_obs_blocks`) uses the right-perturbation
+workhorse `∂(R a)/∂ω = -R[a]_×` (v-slam Ch.3 / lio-slam Ch.2) — no autodiff.
+
+### Model-aware initialization — `fx` is model-relative
+
+Seeding every model's `fx` from one pinhole focal is wrong: the model-independent quantity
+is the **paraxial focal** `f_eff = dr/dθ|₀`, and `fx` means different things per model —
+`fx_KB = f_eff` but `fx_DS = f_eff·(1+ξ)` (docs/learn/are_two_models_the_same_camera.md).
+A pinhole-focal seed for DS is off by `(1+ξ)` (~25 % at ξ≈−0.2), pushing the solve into a
+sub-optimal basin. `rig.make_bundle_front_end` now seeds each model via its **own**
+`initialize_from_correspondences` (KB: LS on the θ-polynomial; DS/UCM/EUCM: linear α-solve
+from the projection equation), from RANSAC-inlier ray↔pixel correspondences. `paraxial_focal`
+exposes `f_eff` and is used for cross-camera consensus (never compare raw `fx`). Verified:
+DS recovers `f_eff = 683` (vs GT 683) while its raw `fx = 820`.
+
+The geometry-aware seed helps low-order distortion (DS/UCM/EUCM's single α) but a high-order
+fit — KB's 4-term θ-polynomial from slightly biased pinhole bearings — can occasionally seed
+*worse* than neutral. So the front-end runs a **two-start**: calibrate from both the
+model-aware and the neutral seed and keep the lower-RMS fit. The geometry-aware init is thus
+used wherever it helps and never degrades a model whose `fx` is already paraxial.
+
+### Robustness — IRLS weighting, not rejection
+
+Per DS-MSP's own robust-loss doc, hard rejection throws away data and is threshold-brittle;
+**robust M-estimation keeps every corner and down-weights by `w(r)=ρ'(r)/r` (IRLS)**. The
+staged BA now runs Huber+MAD-auto-scale (poses-only) then **redescending Cauchy + MAD +
+graduated non-convexity** (joint) — outliers fade smoothly, nothing is clipped. The
+intrinsic *seed* is hardened separately (a degenerate seed can't be saved by a robust final
+loss): `_robust_pinhole` MAD-reweights the pinhole pre-calibration, and the per-camera model
+calibrate runs on RANSAC-inlier correspondences so a few blunders don't wreck its pose
+seeding. Evaluation uses robust metrics (`reprojection_metrics`: median + inlier-RMS), since
+naive RMS scores the size of the outliers a robust fit deliberately ignored. Measured: the
+BA recovers extrinsics to <1 % under **12 % gross (50 px) blunders** (vs L2 diverging), and
+the full from-scratch pipeline stays <2 % under **6 %** gross outliers — keeping every point.
+
+### What was deliberately not done
+- Object poses, not board poses, are the eliminated block (boards stay baked, §13b). A
+  two-level Schur could eliminate both; unnecessary at benchmark scale.
+- Front-end intrinsic-from-scratch breaks down past ~6–10 % *gross* outliers (an unknown-
+  focal robust-calibration regime limited by OpenCV's non-robust `calibrateCamera`/`solvePnP`
+  primitives); production detectors keep gross blunders far rarer, and the IRLS BA + RANSAC
+  PnP handle what remains. Sim(3) gauge handling was considered but the metric scale is fixed
+  by the board, so SE(3) suffices.
+
 ## 14. Relationship to the other docs
 
 - `RIG_CALIBRATION_PLAN.md` — the *what/where* (gap analysis, 8 concepts, file layout, phased

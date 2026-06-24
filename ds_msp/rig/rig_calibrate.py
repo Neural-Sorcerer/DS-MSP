@@ -24,6 +24,40 @@ from .pose_init import average_object_pose_in_group, estimate_pose_ransac
 from .types import Object3D, ObjectObs, RigState
 
 
+def _robust_pinhole(objpts, imgpts, w, h, iters: int = 3):
+    """Pinhole+Brown pre-calibration hardened against gross outliers (mis-decoded corners).
+
+    Plain ``cv2.calibrateCamera`` is L2 and a few 50 px blunders drag the focal to garbage,
+    after which residual gating can't even tell which points are bad. Instead we **RANSAC
+    each view's pose first** (``solvePnPRansac`` finds the largest rigidly-consistent corner
+    set, ignoring blunders) and calibrate only on those inliers, iterating so a better ``K``
+    tightens the gate. This hardens the intrinsic *seed*; the downstream global BA still
+    keeps every point under IRLS weighting. Returns ``(K, dist)``.
+    """
+    K = np.array([[float(w), 0, w / 2.0], [0, float(w), h / 2.0], [0, 0, 1.0]])
+    dist = np.zeros(5)
+    op, ip = list(objpts), list(imgpts)
+    for it in range(iters + 1):
+        _, K, dist, rvecs, tvecs = cv2.calibrateCamera(
+            op, ip, (w, h), K, dist, flags=cv2.CALIB_USE_INTRINSIC_GUESS)
+        if it == iters:
+            break
+        errs = [np.linalg.norm(cv2.projectPoints(o, rv, tv, K, dist)[0].reshape(-1, 2) - p,
+                               axis=1) for o, p, rv, tv in zip(op, ip, rvecs, tvecs)]
+        allc = np.concatenate(errs)
+        med = float(np.median(allc))
+        mad = float(np.median(np.abs(allc - med))) * 1.4826
+        thr = max(med + 4.0 * mad, 2.0)                  # gate only clear blunders
+        nop, nip = [], []
+        for o, p, e in zip(op, ip, errs):
+            inl = e < thr
+            if inl.sum() >= 6:
+                nop.append(o[inl]); nip.append(p[inl])
+        if len(nop) >= 3:
+            op, ip = nop, nip
+    return K, dist
+
+
 def _T_from_rt(rvec, tvec) -> np.ndarray:
     """4x4 object->camera transform from an OpenCV (rvec, tvec) pair."""
     T = np.eye(4)
@@ -102,6 +136,57 @@ def _seed_from_K(model_cls, K: np.ndarray) -> CameraModel:
     return model_cls.from_params(vec)
 
 
+def paraxial_focal(model: CameraModel) -> Tuple[float, float]:
+    """The *model-independent* focal length f_eff = dr/dθ|₀ (paraxial focal), in pixels.
+
+    A model's stored ``fx`` is model-relative — `fx` means different things in different
+    projections, so two correct calibrations of the same lens have different `fx`
+    (docs/learn/are_two_models_the_same_camera.md). For Double Sphere the axial sphere
+    shift gives ``f_eff = fx / (1 + xi)``; KB/UCM/EUCM/RadTan/pinhole have ``f_eff = fx``
+    at the optical axis. Compare cameras (and seed focals) by this, never by raw ``fx``.
+    """
+    p = dict(zip(model.param_names, model.params))
+    fx, fy = p["fx"], p["fy"]
+    if "xi" in p:                       # Double Sphere: paraxial = fx / (1 + xi)
+        s = 1.0 + p["xi"]
+        if abs(s) > 1e-9:
+            return fx / s, fy / s
+    return fx, fy
+
+
+def _model_aware_seed(model_cls, Kp, dist, ge6, obj) -> CameraModel:
+    """Seed ``model_cls`` using each model's OWN intrinsic geometry.
+
+    The pinhole pre-calibration gives the paraxial focal + principal point in ``Kp``. Each
+    model then solves its native distortion from true ray↔pixel correspondences via
+    ``initialize_from_correspondences`` (KB: LS on the θ-polynomial; DS/UCM/EUCM: linear
+    α-solve from the projection equation), rather than a generic ``alpha=0.5`` guess that
+    would seed a sub-optimal basin. Per-view ``solvePnPRansac`` gives the bearing rays and
+    the **inlier mask**, so gross outliers don't corrupt the linear α/k solve. The seed only
+    needs to be good enough; the downstream robust ``calibrate`` refines from it.
+    """
+    rays, pix, Xcal, uvcal = [], [], [], []
+    for o in ge6:
+        X = obj.pts_3d[o.point_rows]
+        try:
+            ok, rv, tv, inl = cv2.solvePnPRansac(X.astype(np.float64), o.pts_2d, Kp, dist,
+                                                 reprojectionError=3.0)
+        except cv2.error:
+            ok = False
+        if not ok:
+            continue
+        idx = inl.ravel() if inl is not None and len(inl) >= 6 else np.arange(len(X))
+        R = cv2.Rodrigues(rv)[0]
+        Xc = (R @ X[idx].T).T + tv.ravel()
+        rays.append(Xc / np.linalg.norm(Xc, axis=1, keepdims=True))
+        pix.append(o.pts_2d[idx])
+        Xcal.append(X[idx]); uvcal.append(o.pts_2d[idx])   # inlier set for calibrate
+    seed = _seed_from_K(model_cls, Kp)
+    if rays and sum(len(r) for r in rays) >= 6:
+        seed.initialize_from_correspondences(Kp, np.vstack(rays), np.vstack(pix))
+    return seed, Xcal, uvcal
+
+
 def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1.0,
                           max_nfev: int = 150):
     """Build a model-agnostic front-end that calibrates each camera with ``model_cls``.
@@ -122,54 +207,51 @@ def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1
             ge6 = [o for o in obs if len(o.point_rows) >= 6]   # views usable for intrinsics
             objpts = [obj.pts_3d[o.point_rows].astype(np.float32) for o in ge6]
             imgpts = [o.pts_2d.astype(np.float32) for o in ge6]
-            K0 = np.array([[float(w), 0, w / 2.0], [0, float(w), h / 2.0], [0, 0, 1.0]])
-            _, Kp, _, _, _ = cv2.calibrateCamera(objpts, imgpts, (w, h), K0, None,
-                                                 flags=cv2.CALIB_USE_INTRINSIC_GUESS)
-            seed = _seed_from_K(model_cls, Kp)
-            # keep only frames that retain >=6 valid rays under the seed model, so
-            # calibrate()'s DLT pose seeding (needs 6) never chokes on a partial view.
-            keep = []
-            for o in ge6:
-                rays, vr = seed.unproject(o.pts_2d)
-                if int((vr & (rays[:, 2] > 1e-6)).sum()) >= 6:
-                    keep.append(o)
-            X = [obj.pts_3d[o.point_rows] for o in keep]
-            uv = [o.pts_2d for o in keep]
-            vis = [np.ones(len(o.point_rows), bool) for o in keep]
-            res = _calibrate_single(seed, X, uv, vis, loss=loss, f_scale=f_scale,
-                                    max_nfev=max_nfev)
-            raw[cam_id] = dict(model=res["model"], keep=keep, poses=res["poses"], obs=obs)
+            # Robust pinhole pre-calibration (MAD-reweighted) -> clean paraxial focal seed.
+            Kp, distp = _robust_pinhole(objpts, imgpts, w, h)
+            # Model-aware seed + RANSAC-inlier correspondences (so gross outliers neither
+            # corrupt the per-model distortion solve nor wreck calibrate()'s pose seeding).
+            seed_ma, Xcal, uvcal = _model_aware_seed(model_cls, Kp, distp, ge6, obj)
+            if len(Xcal) >= 3:
+                vis = [np.ones(len(x), bool) for x in Xcal]
+                # Two-start: the model-aware distortion solve helps low-order models (DS/
+                # UCM/EUCM α) but a high-order fit (KB's 4-term θ-polynomial) from slightly
+                # biased pinhole bearings can seed *worse* than neutral. Calibrate from both
+                # and keep the lower-RMS fit, so the geometry-aware seed is used only when it
+                # actually helps and never degrades a model whose fx is already paraxial.
+                cands = [_calibrate_single(s, Xcal, uvcal, vis, loss=loss, f_scale=f_scale,
+                                           max_nfev=max_nfev)
+                         for s in (seed_ma, _seed_from_K(model_cls, Kp))]
+                model = min(cands, key=lambda r: r["rms_px"])["model"]
+            else:
+                model = seed_ma
+            raw[cam_id] = dict(model=model, obs=obs)
 
         # Consensus guard: a camera that views the target near-planar (e.g. an obliquely
         # angled camera seeing one board) hits the focal ambiguity and calibrates to a wrong
-        # / anamorphic focal. Detect such cameras by deviation from the per-rig median focal,
-        # reset their intrinsics to the consensus, and let the global BA refine them through
-        # the rigid-rig constraint (the object pose is pinned by the well-constrained cameras).
-        fxs = np.array([raw[c]["model"].params[0] for c in raw])
-        fys = np.array([raw[c]["model"].params[1] for c in raw])
-        med_fx, med_fy = np.median(fxs), np.median(fys)
+        # / anamorphic focal. Detect such cameras by deviation from the per-rig median
+        # *paraxial* focal (the model-independent f_eff — comparing raw fx across a model
+        # with non-trivial axial terms is meaningless), reset to the consensus, and let the
+        # global BA refine them through the rigid-rig constraint.
+        feff = {c: paraxial_focal(raw[c]["model"]) for c in raw}
+        med_fx = float(np.median([feff[c][0] for c in raw]))
+        med_fy = float(np.median([feff[c][1] for c in raw]))
 
         cameras = {}
         for cam_id, r in raw.items():
-            model = r["model"]
-            fx, fy = model.params[0], model.params[1]
-            degenerate = (abs(fx - med_fx) > 0.25 * med_fx
-                          or abs(fy - med_fy) > 0.25 * med_fy)
-            if degenerate and len(raw) >= 2:
+            fx, fy = feff[cam_id]
+            if (len(raw) >= 2 and (abs(fx - med_fx) > 0.25 * med_fx
+                                   or abs(fy - med_fy) > 0.25 * med_fy)):
                 w, h = img_size[cam_id]
                 Kc = np.array([[med_fx, 0, w / 2.0], [0, med_fy, h / 2.0], [0, 0, 1.0]])
                 model = _seed_from_K(model_cls, Kc)
-                cameras[cam_id] = model
-                for o in r["obs"]:
-                    o.T_c_o = _gated_pnp(model, obj.pts_3d[o.point_rows], o.pts_2d)
             else:
-                cameras[cam_id] = model
-                clean = {id(o): pose for o, pose in zip(r["keep"], r["poses"])}
-                for o in r["obs"]:
-                    if id(o) in clean:
-                        o.T_c_o = _T_from_rt(*clean[id(o)])
-                    else:
-                        o.T_c_o = _gated_pnp(model, obj.pts_3d[o.point_rows], o.pts_2d)
+                model = r["model"]
+            cameras[cam_id] = model
+            # all object poses via robust gated PnP (keeps every point downstream; the
+            # global BA does the IRLS weighting, no per-point rejection in the answer).
+            for o in r["obs"]:
+                o.T_c_o = _gated_pnp(model, obj.pts_3d[o.point_rows], o.pts_2d)
         return cameras
     return front_end
 
@@ -232,8 +314,13 @@ def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
     rig = RigState(cameras=cameras, T_c_g=extr, ref_cam_id=ref_cam,
                    object_poses=object_poses, objects={0: obj}, img_size=img_size)
 
-    # 4. staged global BA: poses-only, then full joint (incl. intrinsics)
-    rig = ba.refine(rig, object_obs, fix_intrinsics=True, verbose=verbose)
+    # 4. staged global BA with robust IRLS weighting (no rejection):
+    #    - poses-only: Huber + MAD auto-scale (bounded; safe while the init is still rough)
+    #    - full joint: redescending Cauchy + MAD auto-scale with a short GNC anneal, so
+    #      gross outliers are smoothly muted without being thrown away.
+    rig = ba.refine(rig, object_obs, fix_intrinsics=True,
+                    robust_kernel="huber", robust_scale="auto", verbose=verbose)
     if not fix_intrinsics:
-        rig = ba.refine(rig, object_obs, fix_intrinsics=False, verbose=verbose)
+        rig = ba.refine(rig, object_obs, fix_intrinsics=False, robust_kernel="cauchy",
+                        robust_scale="auto", gnc_iters=5, gnc_start=4.0, verbose=verbose)
     return rig
