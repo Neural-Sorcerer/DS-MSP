@@ -40,7 +40,17 @@ pose initialization.
   `CharucoDetector`), schema-identical to MC-Calib keypoints.
 - **B2** `ds_msp/rig/config.py` — parse MC-Calib's exact `calib_param.yml`; `--config` runs
   the whole pipeline from a single file. The ease-of-use win.
-- **B3** Disjoint-group hand-eye evaluation (Scenario_2 is `…NonGloballyOverlap`).
+- **B3** Disjoint-group hand-eye. *(done)* Two findings: (1) Scenario_2
+  (`Main_5_cameras_NonGloballyOverlap`, 5 cams) forms **one** co-visibility component via a
+  chain (2-1-0-3-4) — the realistic non-globally-overlap case — and calibrates from raw
+  images to **0.029 %** baseline vs GT. (2) The hand-eye link path (`handeye_bootstrap` /
+  `link_groups`) for genuinely disconnected components had a latent bug: it passed *motions*
+  to `cv2.calibrateHandEye`, which rebuilds motions from *absolute* poses internally, so the
+  estimate was garbage (~149° off). Replaced with a direct Tsai–Lenz solve of
+  `M_b = X·M_a·X⁻¹` — recovers a known inter-group transform exactly (`tests/rig/test_handeye.py`).
+  *Limitation:* linking requires the two groups' reference cameras to observe the object over
+  a shared frame set (synchronized capture); fully time-disjoint groups (zero shared frames)
+  would need object-motion interpolation and are out of scope.
 - **C1** Barron kernel + studentized leverage in `core/robust.py`.
 - **C2** Reweighting PnP — replace `_gated_pnp` rejection with all-points IRLS.
 - **C3** `scripts/benchmark_outliers.py` — error vs outlier rate, reject vs reweight; the

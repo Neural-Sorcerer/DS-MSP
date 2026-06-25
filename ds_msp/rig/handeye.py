@@ -15,11 +15,46 @@ from typing import Dict, List, Tuple
 import cv2
 import numpy as np
 
+from ..core.lie import so3_log
 from .averaging import average_rotation, average_translation
 
 
 def _rot_angle_deg(R: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(R) - 1.0) / 2.0, -1.0, 1.0))))
+
+
+def _tsai_solve(motions_a: List[np.ndarray], motions_b: List[np.ndarray],
+                min_angle: float = 1e-3) -> np.ndarray:
+    """Solve ``M_b = X · M_a · X⁻¹`` for the rigid transform ``X = T_b_a`` from paired
+    relative motions (Tsai–Lenz). Rotation: ``log(R_b) = R_X · log(R_a)`` solved by SVD
+    (Kabsch); translation: ``(R_{M_b} − I) t_X = R_X t_{M_a} − t_{M_b}`` by least squares.
+
+    A direct solve avoids ``cv2.calibrateHandEye``'s absolute-pose convention (it rebuilds
+    motions internally, so feeding it motions is wrong). Motions with near-zero rotation
+    carry no constraint and are dropped (need rotational diversity).
+    """
+    A, B = [], []
+    for Ma, Mb in zip(motions_a, motions_b):
+        a = so3_log(Ma[:3, :3])
+        if np.linalg.norm(a) < min_angle:
+            continue
+        A.append(a)
+        B.append(so3_log(Mb[:3, :3]))
+    if len(A) < 2:
+        return np.eye(4)
+    A, B = np.array(A), np.array(B)
+    U, _, Vt = np.linalg.svd(B.T @ A)
+    D = np.eye(3)
+    D[2, 2] = np.sign(np.linalg.det(U @ Vt))
+    Rx = U @ D @ Vt
+    C, d = [], []
+    for Ma, Mb in zip(motions_a, motions_b):
+        C.append(Mb[:3, :3] - np.eye(3))
+        d.append(Rx @ Ma[:3, 3] - Mb[:3, 3])
+    tx = np.linalg.lstsq(np.vstack(C), np.concatenate(d), rcond=None)[0]
+    X = np.eye(4)
+    X[:3, :3], X[:3, 3] = Rx, tx
+    return X
 
 
 def handeye_bootstrap(poses_a: List[np.ndarray], poses_b: List[np.ndarray], *,
@@ -50,28 +85,17 @@ def handeye_bootstrap(poses_a: List[np.ndarray], poses_b: List[np.ndarray], *,
         sel = [int(rng.choice(by_cluster[c])) for c in clusters]
         if len(sel) < 3:
             continue
-        # motions between consecutive selected poses
-        Ra_g, ta_g, Rb_g, tb_g = [], [], [], []
-        for u, v in zip(sel[:-1], sel[1:]):
-            Ma = poses_a[v] @ np.linalg.inv(poses_a[u])
-            Mb = poses_b[v] @ np.linalg.inv(poses_b[u])
-            Ra_g.append(Ma[:3, :3]); ta_g.append(Ma[:3, 3])
-            Rb_g.append(Mb[:3, :3]); tb_g.append(Mb[:3, 3])
-        try:
-            Rx, tx = cv2.calibrateHandEye(Ra_g, ta_g, Rb_g, tb_g,
-                                          method=cv2.CALIB_HAND_EYE_TSAI)
-        except cv2.error:
+        # relative motions between consecutive selected poses
+        Ma_list = [poses_a[v] @ np.linalg.inv(poses_a[u]) for u, v in zip(sel[:-1], sel[1:])]
+        Mb_list = [poses_b[v] @ np.linalg.inv(poses_b[u]) for u, v in zip(sel[:-1], sel[1:])]
+        X = _tsai_solve(Ma_list, Mb_list)
+        if np.allclose(X, np.eye(4)):
             continue
-        # consistency: X should satisfy Mb @ X ~ X @ Ma for each motion
-        X = np.eye(4); X[:3, :3] = Rx; X[:3, 3] = tx.ravel()
-        worst = 0.0
-        for Ma_R, Ma_t, Mb_R, Mb_t in zip(Ra_g, ta_g, Rb_g, tb_g):
-            Ma = np.eye(4); Ma[:3, :3] = Ma_R; Ma[:3, 3] = Ma_t
-            Mb = np.eye(4); Mb[:3, :3] = Mb_R; Mb[:3, 3] = Mb_t
-            E = np.linalg.inv(Mb @ X) @ (X @ Ma)
-            worst = max(worst, _rot_angle_deg(E[:3, :3]))
+        # consistency: X must satisfy Mb @ X ~ X @ Ma for each motion
+        worst = max((_rot_angle_deg((np.linalg.inv(Mb @ X) @ (X @ Ma))[:3, :3])
+                     for Ma, Mb in zip(Ma_list, Mb_list)), default=180.0)
         if worst < gate_deg:
-            Rs.append(Rx); ts.append(np.asarray(tx).ravel())
+            Rs.append(X[:3, :3]); ts.append(X[:3, 3])
 
     if len(Rs) > 3:
         R = average_rotation(Rs)
@@ -83,16 +107,14 @@ def handeye_bootstrap(poses_a: List[np.ndarray], poses_b: List[np.ndarray], *,
 
 
 def _single_handeye(poses_a, poses_b) -> np.ndarray:
-    """Fallback Horaud-style solve over all available motions."""
-    Ra, ta, Rb, tb = [], [], [], []
-    for u, v in zip(range(len(poses_a) - 1), range(1, len(poses_a))):
-        Ma = poses_a[v] @ np.linalg.inv(poses_a[u])
-        Mb = poses_b[v] @ np.linalg.inv(poses_b[u])
-        Ra.append(Ma[:3, :3]); ta.append(Ma[:3, 3])
-        Rb.append(Mb[:3, :3]); tb.append(Mb[:3, 3])
-    Rx, tx = cv2.calibrateHandEye(Ra, ta, Rb, tb, method=cv2.CALIB_HAND_EYE_HORAUD)
-    T = np.eye(4); T[:3, :3] = Rx; T[:3, 3] = tx.ravel()
-    return T
+    """Fallback solve over all consecutive motions (no RANSAC clustering)."""
+    if len(poses_a) < 2:
+        return np.eye(4)
+    Ma = [poses_a[v] @ np.linalg.inv(poses_a[u])
+          for u, v in zip(range(len(poses_a) - 1), range(1, len(poses_a)))]
+    Mb = [poses_b[v] @ np.linalg.inv(poses_b[u])
+          for u, v in zip(range(len(poses_b) - 1), range(1, len(poses_b)))]
+    return _tsai_solve(Ma, Mb)
 
 
 def link_groups(groups: List[List[int]], extr: Dict[int, np.ndarray],
