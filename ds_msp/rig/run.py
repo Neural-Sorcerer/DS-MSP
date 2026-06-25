@@ -57,7 +57,7 @@ def calibrate_scenario(scn: Scenario, model_spec, *, fix_intrinsics: bool = Fals
                        save_dir: Optional[str] = None,
                        camera_params_file_name: str = "",
                        image_root: Optional[str] = None,
-                       cam_prefix: str = "Cam_") -> Dict:
+                       cam_prefix: str = "Cam_", he_approach: int = 0) -> Dict:
     """Calibrate one loaded :class:`Scenario` and (optionally) write MC-Calib output.
 
     ``model_spec`` is a single model or a ``{cam_id: model}`` map (names or classes).
@@ -72,7 +72,8 @@ def calibrate_scenario(scn: Scenario, model_spec, *, fix_intrinsics: bool = Fals
     else:
         front_end = make_bundle_front_end(model_spec)
     rig = calibrate_rig(scn.object, scn.object_obs, scn.img_size,
-                        fix_intrinsics=fix_intrinsics, front_end=front_end)
+                        fix_intrinsics=fix_intrinsics, front_end=front_end,
+                        he_approach=he_approach)
     rig.objects = {scn.object.object_id: scn.object}
 
     paths = {}

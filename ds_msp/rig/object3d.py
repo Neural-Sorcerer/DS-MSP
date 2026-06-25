@@ -21,16 +21,20 @@ from .types import BoardObs, Object3D
 
 
 def _pair_transforms(board_obs: List[BoardObs]):
-    """For every frame with >1 valid board, accumulate inter-board transforms
-    ``T_b2_b1 = inv(T_c_b2) @ T_c_b1`` (McCalib.cpp:786) and co-observation counts."""
-    by_frame: Dict[int, List[BoardObs]] = defaultdict(list)
+    """For every image (same camera + frame) with >1 valid board, accumulate inter-board
+    transforms ``T_b2_b1 = inv(T_c_b2) @ T_c_b1`` (McCalib.cpp:786) and co-observation
+    counts. The grouping key is ``(cam_id, frame_id)``, not ``frame_id`` alone: MC-Calib's
+    ``computeBoardsPairPose`` pairs boards seen in the *same image*. Two boards seen by
+    *different* cameras in the same frame have ``T_c_b`` in different camera frames, so the
+    camera does not cancel and the pair transform would be garbage."""
+    by_image: Dict[Tuple[int, int], List[BoardObs]] = defaultdict(list)
     for o in board_obs:
         if o.valid and o.T_c_b is not None:
-            by_frame[o.frame_id].append(o)
+            by_image[(o.cam_id, o.frame_id)].append(o)
 
     samples: Dict[Tuple[int, int], List[np.ndarray]] = defaultdict(list)
     counts: Dict[Tuple[int, int], int] = defaultdict(int)
-    for obs in by_frame.values():
+    for obs in by_image.values():
         for a in obs:
             for b in obs:
                 if a.board_id == b.board_id:

@@ -20,9 +20,11 @@ Config keys (MC-Calib's, plus the ``camera_models`` extension):
   ``save_reprojection``.
 
 Relative paths resolve against the config file's directory; pass ``overrides`` to retarget
-them (e.g. point ``root_path`` at the real dataset). Multi-board *fused-object* geometry is
-MC-Calib's board-group reconstruction — for ``number_board > 1`` the object model is loaded
-from ``object_path`` / the keypoints directory; single-board objects are built from config.
+them (e.g. point ``root_path`` at the real dataset). Single-board objects are built from
+config. Multi-board *fused-object* geometry (MC-Calib's board-group reconstruction) is
+**reconstructed from the detections** (:mod:`ds_msp.rig.reconstruct`) when no pre-built
+``object_path`` / ``calibrated_objects_data.yml`` is supplied — so a multi-board rig also
+calibrates straight from a raw image folder.
 """
 
 from __future__ import annotations
@@ -175,10 +177,11 @@ def load_config(config_path: str, overrides: Optional[Dict] = None) -> RigConfig
     return cfg
 
 
-def _find_object(cfg: RigConfig):
-    """Single board → build from config; multi-board → load the fused object model."""
-    if cfg.number_board == 1:
-        return single_board_object(cfg.boards[0])
+def _try_load_object(cfg: RigConfig):
+    """Return a pre-built fused object if one is available (``object_path`` or a
+    ``calibrated_objects_data.yml`` next to the keypoints / save path), else ``None``.
+    A pre-built object is the fast path; when absent, multi-board geometry is reconstructed
+    from the detections (:func:`rig.reconstruct.reconstruct_object`)."""
     for cand in (cfg.object_path,
                  os.path.join(os.path.dirname(cfg.keypoints_path or ""), "calibrated_objects_data.yml")
                  if cfg.keypoints_path else None,
@@ -186,9 +189,33 @@ def _find_object(cfg: RigConfig):
                  if cfg.save_path else None):
         if cand and os.path.exists(cand):
             return _load_object(cand)
-    raise FileNotFoundError(
-        f"number_board={cfg.number_board} needs a fused object model; set 'object_path' or "
-        f"provide calibrated_objects_data.yml next to the keypoints/save path")
+    return None
+
+
+def _detect_obs(cfg: RigConfig, obj):
+    """Object observations from a known object — keypoints if given, else raw images."""
+    if cfg.keypoints_path:
+        return _obs_from_keypoints(cfg, obj)
+    if cfg.root_path:
+        cam_ids = list(range(cfg.number_camera))
+        return detect_rig(cfg.root_path, cam_ids, cfg.boards, obj,
+                          cam_prefix=cfg.cam_prefix, min_corners=8)
+    raise ValueError("config has neither keypoints_path nor root_path")
+
+
+def _reconstruct(cfg: RigConfig):
+    """Reconstruct the fused multi-board object from raw detections, then map observations
+    onto it — MC-Calib's ``calibrate3DObjects`` (no pre-built object file needed)."""
+    from .reconstruct import reconstruct_from_images, reconstruct_from_keypoints
+    if cfg.keypoints_path:
+        obj, obs, img_size = reconstruct_from_keypoints(cfg.keypoints_path, cfg.boards)
+    elif cfg.root_path:
+        cam_ids = list(range(cfg.number_camera))
+        obj, obs, img_size = reconstruct_from_images(
+            cfg.root_path, cam_ids, cfg.boards, cam_prefix=cfg.cam_prefix)
+    else:
+        raise ValueError("config has neither keypoints_path nor root_path")
+    return obj, obs, img_size
 
 
 def _obs_from_keypoints(cfg: RigConfig, obj):
@@ -227,16 +254,16 @@ def calibrate_from_config(config_path: str, overrides: Optional[Dict] = None) ->
     :func:`~ds_msp.rig.run.calibrate_scenario` result dict plus the parsed ``config``.
     """
     cfg = load_config(config_path, overrides)
-    obj = _find_object(cfg)
 
-    if cfg.keypoints_path:
-        object_obs, img_size = _obs_from_keypoints(cfg, obj)
-    elif cfg.root_path:
-        cam_ids = list(range(cfg.number_camera))
-        object_obs, img_size = detect_rig(cfg.root_path, cam_ids, cfg.boards, obj,
-                                          cam_prefix=cfg.cam_prefix, min_corners=8)
+    if cfg.number_board == 1:
+        obj = single_board_object(cfg.boards[0])
+        object_obs, img_size = _detect_obs(cfg, obj)
     else:
-        raise ValueError("config has neither keypoints_path nor root_path")
+        obj = _try_load_object(cfg)
+        if obj is not None:                         # pre-built fused object: fast path
+            object_obs, img_size = _detect_obs(cfg, obj)
+        else:                                       # reconstruct the fused object (MC-Calib
+            obj, object_obs, img_size = _reconstruct(cfg)   # calibrate3DObjects analogue)
 
     cam_ids = sorted({o.cam_id for o in object_obs})
     spec = {c: cfg.camera_models[c] if c < len(cfg.camera_models) else cfg.camera_models[-1]
@@ -257,6 +284,7 @@ def calibrate_from_config(config_path: str, overrides: Optional[Dict] = None) ->
     res = calibrate_scenario(scn, spec, fix_intrinsics=cfg.fix_intrinsic,
                              init_cameras=init_cameras, save_dir=cfg.save_path,
                              camera_params_file_name=cfg.camera_params_file_name,
-                             image_root=image_root, cam_prefix=cfg.cam_prefix)
+                             image_root=image_root, cam_prefix=cfg.cam_prefix,
+                             he_approach=cfg.he_approach)
     res["config"] = cfg
     return res

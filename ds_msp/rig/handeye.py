@@ -118,14 +118,20 @@ def _single_handeye(poses_a, poses_b) -> np.ndarray:
 
 
 def link_groups(groups: List[List[int]], extr: Dict[int, np.ndarray],
-                object_obs) -> Dict[int, np.ndarray]:
+                object_obs, *, he_approach: int = 0) -> Dict[int, np.ndarray]:
     """Merge non-overlapping camera groups into one frame.
 
     Each group's cameras keep their intra-group ``T_c_g`` (relative to the group's own
     reference). We estimate the transform from each non-base group's reference camera to
     the base group's reference camera via hand-eye on the object motion seen by both,
     then re-base every camera in that group. Returns a flat ``{cam: T_c_g0}``.
+
+    ``he_approach`` mirrors MC-Calib's config key: ``0`` = the robust bootstrap
+    (cluster + RANSAC Tsai, ``handeye_bootstrap``); ``1`` = the traditional single Tsai
+    solve over all motions (``_single_handeye``).
     """
+    solve = (handeye_bootstrap if int(he_approach) == 0 else
+             (lambda pa, pb: _single_handeye(pa, pb)))
     base = groups[0]
     base_ref = base[0]
     out = {c: extr[c].copy() for c in base}
@@ -146,7 +152,7 @@ def link_groups(groups: List[List[int]], extr: Dict[int, np.ndarray],
         if len(common) >= 3:
             pa = [base_poses[f] for f in common]
             pb = [gposes[f] for f in common]
-            T_gref_baseref = handeye_bootstrap(pa, pb)         # base-ref -> g-ref
+            T_gref_baseref = solve(pa, pb)                     # base-ref -> g-ref
         else:
             T_gref_baseref = np.eye(4)
         # re-base: camera in group has T_c_gref; want T_c_baseref = T_c_gref @ T_gref_baseref

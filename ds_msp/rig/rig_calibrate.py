@@ -303,7 +303,7 @@ def _gated_pnp(model, X, uv, max_rms_px: float = 2.0):
 def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
                   img_size: Dict[int, Tuple[int, int]],
                   *, fix_intrinsics: bool = False, verbose: bool = False,
-                  front_end: Optional[Callable] = None) -> RigState:
+                  front_end: Optional[Callable] = None, he_approach: int = 0) -> RigState:
     """Calibrate a multi-camera rig from fused-object observations.
 
     Returns a :class:`RigState` with per-camera intrinsics, ``T_c_g`` extrinsics
@@ -328,7 +328,7 @@ def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
         # Non-overlapping groups: link with hand-eye, then re-base every camera to the
         # global reference (group 0's reference camera).
         from .handeye import link_groups
-        extr = link_groups(groups, extr, object_obs)
+        extr = link_groups(groups, extr, object_obs, he_approach=he_approach)
     ref_cam = groups[0][0]
 
     # 3. per-frame object-in-group poses (average over the cameras that see it)
