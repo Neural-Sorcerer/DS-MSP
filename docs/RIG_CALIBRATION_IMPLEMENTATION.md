@@ -685,23 +685,69 @@ used wherever it helps and never degrades a model whose `fx` is already paraxial
 Per DS-MSP's own robust-loss doc, hard rejection throws away data and is threshold-brittle;
 **robust M-estimation keeps every corner and down-weights by `w(r)=ρ'(r)/r` (IRLS)**. The
 staged BA now runs Huber+MAD-auto-scale (poses-only) then **redescending Cauchy + MAD +
-graduated non-convexity** (joint) — outliers fade smoothly, nothing is clipped. The
-intrinsic *seed* is hardened separately (a degenerate seed can't be saved by a robust final
-loss): `_robust_pinhole` MAD-reweights the pinhole pre-calibration, and the per-camera model
-calibrate runs on RANSAC-inlier correspondences so a few blunders don't wreck its pose
-seeding. Evaluation uses robust metrics (`reprojection_metrics`: median + inlier-RMS), since
-naive RMS scores the size of the outliers a robust fit deliberately ignored. Measured: the
-BA recovers extrinsics to <1 % under **12 % gross (50 px) blunders** (vs L2 diverging), and
-the full from-scratch pipeline stays <2 % under **6 %** gross outliers — keeping every point.
+graduated non-convexity** (joint) — outliers fade smoothly, nothing is clipped. Robustness
+must also live in the *seed and the init*, before any reweighting can act (a degenerate seed
+or a wrong-basin extrinsic can't be saved by a robust final loss). Two stages were rewritten
+**from scratch in pure NumPy** to remove the non-robust OpenCV primitives that capped the old
+pipeline — see §13e. Evaluation uses robust metrics (`reprojection_metrics`: median +
+inlier-RMS), since naive RMS scores the size of the outliers a robust fit deliberately ignored.
 
-### What was deliberately not done
-- Object poses, not board poses, are the eliminated block (boards stay baked, §13b). A
+### 13e. From-scratch robust init (replacing the OpenCV non-robust primitives)
+
+The previous scope note conceded that "front-end intrinsic-from-scratch breaks down past
+~6–10 % gross outliers, limited by OpenCV's non-robust `calibrateCamera` / `solvePnP`." That
+ceiling has now been removed by writing those primitives **from scratch** (`calib/robust_init.py`,
+pure NumPy) and fixing two non-robust stages they fed:
+
+1. **Robust intrinsic seed — RANSAC DLT resection.** `cv2.calibrateCamera` is L2: a few 40 px
+   blunders drag the focal to garbage, and its post-hoc gate keys off the already-corrupted
+   fit. Replaced by a RANSAC over a linear DLT 3×4 camera matrix on the genuinely-3D target,
+   RQ-decomposed to `K, R, t`; the focal seed is the robust median over inlier views. A short
+   Cauchy RadTan refine (the in-house `calibrate`, also from-scratch) removes the pinhole DLT's
+   distortion-induced focal bias — matching what `calibrateCamera` gave but without its L2
+   fragility. Verified: focal recovered to ≤0.6 % under 10 % blunders where the L2 seed drifted.
+2. **From-scratch RANSAC PnP** (`ransac_pnp_normalized`, DLT pose + SVD orthogonalization)
+   replaces the non-robust `cv2.solvePnP` / `cv2.solvePnPRansac` used to seed per-view poses in
+   both the front-end and `calib.bundle._seed_poses`. (`cv2.Rodrigues` — a pure rotation↔axis-
+   angle conversion, not an estimator — is kept.)
+3. **The actual divergence was downstream.** With the seeds fixed, the rig still collapsed
+   (one camera's extrinsic → 100 %) under ≥15 % outliers. Two non-robust stages were the cause:
+   (a) the per-frame pose gate measured RMS over **all** points, so a *correct* pose with a few
+   40 px blunders reprojects at ~12 px and was wrongly rejected — starving the extrinsics graph;
+   fixed to gate on the RANSAC **inlier** set. (b) `init_camera_groups` averaged the per-frame
+   relative camera transforms with equal weight (Markley), so a handful of bad frames dragged
+   the init into a wrong basin BA couldn't escape; replaced with `robust_average_transform`, an
+   IRLS/MAD inlier-consensus over SE(3). Together these turn the 100 % collapse into <0.5 %.
+
+**Model-of-choice accuracy (the headline).** A rig's cameras are described by some *original*
+model (typically KB or RadTan); you may want to calibrate them with a *different chosen* model.
+You cannot compare a KB parameter vector to a DS one directly
+(`docs/learn/are_two_models_the_same_camera.md`), so for each camera we **convert the original
+into the chosen model** (`adapt.convert`) and check the calibration recovers, to 1 %: the
+inter-camera **pose** (vs GT), the **paraxial focal** `f_eff` (the one intrinsic comparable
+across models), and the **functional reprojection** RMS over the image (the strict "same
+camera" test). Measured over many seeds (`scripts/validate_param_pose.py`,
+`tests/rig/test_param_pose.py`):
+
+| original → chosen | gross outliers | pose / focal | notes |
+|---|---|---|---|
+| **KB → {RadTan, DS, UCM, EUCM}** | **10 %** | **< 0.6 %** | the named case — a fisheye camera is faithfully represented by any of these; rock-solid |
+| RadTan → RadTan | 15 % | < 0.4 % | same family; robust well past the old ceiling |
+| RadTan → {UCM, KB} | 0–5 % | < 1 % | well-matched |
+| any → any | 0 % | < 1 % (mostly) | representation floor |
+
+### What was deliberately not done / honest limits
+- Object poses, not board poses, are the eliminated Schur block (boards stay baked, §13b). A
   two-level Schur could eliminate both; unnecessary at benchmark scale.
-- Front-end intrinsic-from-scratch breaks down past ~6–10 % *gross* outliers (an unknown-
-  focal robust-calibration regime limited by OpenCV's non-robust `calibrateCamera`/`solvePnP`
-  primitives); production detectors keep gross blunders far rarer, and the IRLS BA + RANSAC
-  PnP handle what remains. Sim(3) gauge handling was considered but the metric scale is fixed
-  by the board, so SE(3) suffices.
+- **RadTan → {DS, EUCM}** can exceed 1 % on adversarial seeds *even at 0 % outliers* — a
+  **representational** limit (extended-sphere models do not exactly reproduce Brown radial
+  distortion), not a robustness failure. This is the converse of the clean KB→sphere result and
+  is exactly the "two models are not always the same camera" point: calibrate a camera with a
+  model that can represent it (KB/fisheye → sphere models; Brown → RadTan/UCM). The pipeline
+  surfaces this rather than hiding it.
+- Sim(3) gauge handling was considered but the **metric scale is fixed by the board's known
+  geometry**, so the extrinsics live in SE(3); the robust transform consensus and BA both
+  operate on SE(3) and that is all that is needed.
 
 ## 14. Relationship to the other docs
 

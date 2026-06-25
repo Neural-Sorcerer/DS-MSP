@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from ..calib.bundle import calibrate as _calibrate_single
+from ..calib.robust_init import intrinsics_seed, ransac_pnp_normalized
 from ..core.contracts import CameraModel
 from ..models.radtan import RadTanModel
 from . import ba
@@ -24,38 +25,36 @@ from .pose_init import average_object_pose_in_group, estimate_pose_ransac
 from .types import Object3D, ObjectObs, RigState
 
 
-def _robust_pinhole(objpts, imgpts, w, h, iters: int = 3):
-    """Pinhole+Brown pre-calibration hardened against gross outliers (mis-decoded corners).
+def _robust_pinhole(objpts, imgpts, w, h):
+    """From-scratch robust pinhole intrinsic seed — RANSAC DLT resection, **no OpenCV**.
 
-    Plain ``cv2.calibrateCamera`` is L2 and a few 50 px blunders drag the focal to garbage,
-    after which residual gating can't even tell which points are bad. Instead we **RANSAC
-    each view's pose first** (``solvePnPRansac`` finds the largest rigidly-consistent corner
-    set, ignoring blunders) and calibrate only on those inliers, iterating so a better ``K``
-    tightens the gate. This hardens the intrinsic *seed*; the downstream global BA still
-    keeps every point under IRLS weighting. Returns ``(K, dist)``.
+    Plain ``cv2.calibrateCamera`` is L2: a few 40 px blunders drag the focal to garbage,
+    and the post-hoc residual gate keys off that already-corrupted fit, so robustness
+    collapses past ~6-10 % gross outliers. Here the robustness lives in the *seed*: each
+    view's 3x4 camera matrix is fit by RANSAC over a linear DLT on the genuinely-3D target
+    (:func:`calib.robust_init.intrinsics_seed`), which rejects blunders by construction, and
+    the focal/principal-point seed is the robust median of the inlier views' RQ-decomposed
+    ``K``. The downstream per-model ``calibrate`` jointly refines focal+distortion under
+    IRLS. Returns ``(K, dist)`` with ``dist`` zeroed (distortion is fit per-model later).
     """
-    K = np.array([[float(w), 0, w / 2.0], [0, float(w), h / 2.0], [0, 0, 1.0]])
-    dist = np.zeros(5)
-    op, ip = list(objpts), list(imgpts)
-    for it in range(iters + 1):
-        _, K, dist, rvecs, tvecs = cv2.calibrateCamera(
-            op, ip, (w, h), K, dist, flags=cv2.CALIB_USE_INTRINSIC_GUESS)
-        if it == iters:
-            break
-        errs = [np.linalg.norm(cv2.projectPoints(o, rv, tv, K, dist)[0].reshape(-1, 2) - p,
-                               axis=1) for o, p, rv, tv in zip(op, ip, rvecs, tvecs)]
-        allc = np.concatenate(errs)
-        med = float(np.median(allc))
-        mad = float(np.median(np.abs(allc - med))) * 1.4826
-        thr = max(med + 4.0 * mad, 2.0)                  # gate only clear blunders
-        nop, nip = [], []
-        for o, p, e in zip(op, ip, errs):
-            inl = e < thr
-            if inl.sum() >= 6:
-                nop.append(o[inl]); nip.append(p[inl])
-        if len(nop) >= 3:
-            op, ip = nop, nip
-    return K, dist
+    op = [np.asarray(o, float) for o in objpts]
+    ip = [np.asarray(p, float) for p in imgpts]
+    K, _poses = intrinsics_seed(op, ip, w, h)              # robust focal/pp seed (DLT RANSAC)
+    # Refine the pinhole seed with a robust RadTan bundle on the same correspondences. The
+    # linear DLT fits *no* distortion, so its focal is biased for anything but a pinhole;
+    # a Brown/RadTan refine (which `calibrate` does from-scratch under a Cauchy kernel)
+    # removes that bias — matching what cv2.calibrateCamera gave but without its L2 fragility,
+    # since the pose seeds are RANSAC and the kernel down-weights the surviving blunders.
+    seed = RadTanModel(K[0, 0], K[1, 1], K[0, 2], K[1, 2], 0.0, 0.0, 0.0, 0.0, 0.0)
+    vis = [np.ones(len(o), bool) for o in op]
+    try:
+        res = _calibrate_single(seed, op, ip, vis, loss="cauchy", f_scale=1.0, max_nfev=80)
+        Kr = res["model"].K
+        if np.isfinite(Kr).all() and Kr[0, 0] > 0 and Kr[1, 1] > 0:
+            K = Kr
+    except (np.linalg.LinAlgError, ValueError):
+        pass
+    return K, np.zeros(5)
 
 
 def _T_from_rt(rvec, tvec) -> np.ndarray:
@@ -154,33 +153,34 @@ def paraxial_focal(model: CameraModel) -> Tuple[float, float]:
     return fx, fy
 
 
-def _model_aware_seed(model_cls, Kp, dist, ge6, obj) -> CameraModel:
+def _model_aware_seed(model_cls, Kp, ge6, obj) -> CameraModel:
     """Seed ``model_cls`` using each model's OWN intrinsic geometry.
 
     The pinhole pre-calibration gives the paraxial focal + principal point in ``Kp``. Each
     model then solves its native distortion from true ray↔pixel correspondences via
     ``initialize_from_correspondences`` (KB: LS on the θ-polynomial; DS/UCM/EUCM: linear
     α-solve from the projection equation), rather than a generic ``alpha=0.5`` guess that
-    would seed a sub-optimal basin. Per-view ``solvePnPRansac`` gives the bearing rays and
-    the **inlier mask**, so gross outliers don't corrupt the linear α/k solve. The seed only
-    needs to be good enough; the downstream robust ``calibrate`` refines from it.
+    would seed a sub-optimal basin. The per-view pose + **inlier mask** come from the
+    from-scratch :func:`calib.robust_init.ransac_pnp_normalized` (pixels unprojected through
+    the pinhole ``Kp``), so gross outliers neither corrupt the linear α/k solve nor poison
+    the downstream ``calibrate`` pose seeding. The seed only needs to be good enough; the
+    downstream robust ``calibrate`` refines from it.
     """
+    fx, fy, cx, cy = Kp[0, 0], Kp[1, 1], Kp[0, 2], Kp[1, 2]
+    foc = 0.5 * (fx + fy)
     rays, pix, Xcal, uvcal = [], [], [], []
     for o in ge6:
-        X = obj.pts_3d[o.point_rows]
-        try:
-            ok, rv, tv, inl = cv2.solvePnPRansac(X.astype(np.float64), o.pts_2d, Kp, dist,
-                                                 reprojectionError=3.0)
-        except cv2.error:
-            ok = False
-        if not ok:
+        X = obj.pts_3d[o.point_rows].astype(np.float64)
+        uv = o.pts_2d.astype(np.float64)
+        pn = np.column_stack([(uv[:, 0] - cx) / fx, (uv[:, 1] - cy) / fy])
+        T, inl = ransac_pnp_normalized(X, pn, focal=foc, thresh_px=3.0)
+        if T is None or inl.sum() < 6:
             continue
-        idx = inl.ravel() if inl is not None and len(inl) >= 6 else np.arange(len(X))
-        R = cv2.Rodrigues(rv)[0]
-        Xc = (R @ X[idx].T).T + tv.ravel()
+        R, t = T[:3, :3], T[:3, 3]
+        Xc = X[inl] @ R.T + t
         rays.append(Xc / np.linalg.norm(Xc, axis=1, keepdims=True))
-        pix.append(o.pts_2d[idx])
-        Xcal.append(X[idx]); uvcal.append(o.pts_2d[idx])   # inlier set for calibrate
+        pix.append(uv[inl])
+        Xcal.append(X[inl]); uvcal.append(uv[inl])         # inlier set for calibrate
     seed = _seed_from_K(model_cls, Kp)
     if rays and sum(len(r) for r in rays) >= 6:
         seed.initialize_from_correspondences(Kp, np.vstack(rays), np.vstack(pix))
@@ -207,11 +207,11 @@ def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1
             ge6 = [o for o in obs if len(o.point_rows) >= 6]   # views usable for intrinsics
             objpts = [obj.pts_3d[o.point_rows].astype(np.float32) for o in ge6]
             imgpts = [o.pts_2d.astype(np.float32) for o in ge6]
-            # Robust pinhole pre-calibration (MAD-reweighted) -> clean paraxial focal seed.
-            Kp, distp = _robust_pinhole(objpts, imgpts, w, h)
+            # From-scratch robust pinhole pre-calibration (RANSAC DLT) -> clean focal seed.
+            Kp, _distp = _robust_pinhole(objpts, imgpts, w, h)
             # Model-aware seed + RANSAC-inlier correspondences (so gross outliers neither
             # corrupt the per-model distortion solve nor wreck calibrate()'s pose seeding).
-            seed_ma, Xcal, uvcal = _model_aware_seed(model_cls, Kp, distp, ge6, obj)
+            seed_ma, Xcal, uvcal = _model_aware_seed(model_cls, Kp, ge6, obj)
             if len(Xcal) >= 3:
                 vis = [np.ones(len(x), bool) for x in Xcal]
                 # Two-start: the model-aware distortion solve helps low-order models (DS/
@@ -258,15 +258,21 @@ def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1
 
 def _gated_pnp(model, X, uv, max_rms_px: float = 2.0):
     """Robust PnP whose result is accepted only if it reprojects well — a bad pose from a
-    hard partial view is dropped (returns ``None``) rather than poisoning the graph."""
+    hard partial view is dropped (returns ``None``) rather than poisoning the graph.
+
+    The acceptance RMS is measured over the RANSAC **inlier** set, not all points: with
+    gross outliers present, a perfectly good pose still reprojects the blunders at tens of
+    pixels, so an all-points RMS would spuriously reject every outlier-bearing view and
+    starve the extrinsics graph. Gating on the inliers keeps the good poses while still
+    dropping genuinely bad ones (whose inlier set itself reprojects poorly)."""
     T, inl = estimate_pose_ransac(model, X, uv)
-    if T is None:
+    if T is None or inl.sum() < 4:
         return None
-    Xc = (T[:3, :3] @ X.T).T + T[:3, 3]
+    Xc = (T[:3, :3] @ X[inl].T).T + T[:3, 3]
     proj, valid = model.project(Xc)
     if valid.sum() < 4:
         return None
-    d = proj[valid] - uv[valid]
+    d = proj[valid] - uv[inl][valid]
     rms = float(np.sqrt((d * d).sum() / valid.sum()))
     return T if rms < max_rms_px else None
 

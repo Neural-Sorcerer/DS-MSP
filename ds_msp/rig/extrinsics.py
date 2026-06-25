@@ -14,7 +14,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from .averaging import average_transform
+from .averaging import robust_average_transform
 from .graph import connected_components, covis_weights, shortest_path
 from .types import ObjectObs
 
@@ -49,7 +49,7 @@ def init_camera_groups(object_obs: List[ObjectObs], cam_ids: List[int]):
     ``extrinsics[cam_id]`` is the ``T_c_g`` (group-ref -> camera; ref cam = identity).
     """
     samples, counts = _camera_pair_transforms(object_obs)
-    inter = {pair: average_transform(Ts) for pair, Ts in samples.items()}
+    inter = {pair: robust_average_transform(Ts) for pair, Ts in samples.items()}
     weights = covis_weights(counts)
     comps = connected_components(sorted(cam_ids), weights)
 
