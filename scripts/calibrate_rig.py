@@ -17,6 +17,10 @@ Examples
 
   # random valid model per camera (pinhole pool); extrinsics + intrinsics
   python scripts/calibrate_rig.py <scn> --random pinhole --seed 0
+
+  # MC-Calib style: drive everything from one config file (raw images or keypoints)
+  python scripts/calibrate_rig.py --config calib_param.yml
+  python scripts/calibrate_rig.py --config calib_param.yml --set root_path=/abs/Images --set save_path=/abs/out
 """
 from __future__ import annotations
 
@@ -27,6 +31,28 @@ import sys
 sys.path.insert(0, ".")
 from ds_msp.io.mccalib import load_scenario, radtan_from_cameragt          # noqa: E402
 from ds_msp.rig.run import calibrate_scenario, random_model_assignment     # noqa: E402
+
+
+def _run_config(config_path, sets):
+    """MC-Calib-compatible single-file entry: parse calib_param.yml and run."""
+    from ds_msp.rig.config import calibrate_from_config
+    overrides = {}
+    for kv in sets or []:
+        k, _, v = kv.partition("=")
+        overrides[k.strip()] = [s.strip() for s in v.split(",")] if k.strip() == "camera_models" \
+            else v.strip()
+    res = calibrate_from_config(config_path, overrides or None)
+    cfg = res["config"]
+    print(f"=== {os.path.basename(config_path)}: {cfg.number_camera} cameras, "
+          f"{cfg.number_board} board(s), {len(res['rig'].cameras)} calibrated ===")
+    print(f"per-camera model: {res['models']}")
+    m = res["metrics"]
+    if m.get("worst_baseline_pct_vs_gt") is not None:
+        print(f"worst baseline error vs GroundTruth : {m['worst_baseline_pct_vs_gt']:.3f}%")
+    print(f"max reprojection RMS: {m['max_rms_px']:.4f} px")
+    if cfg.save_path:
+        print(f"wrote MC-Calib-format output to: {cfg.save_path}")
+    return res
 
 
 def _resolve_spec(args, cam_ids):
@@ -43,7 +69,10 @@ def _resolve_spec(args, cam_ids):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("scenario", help="path to a Blender_Images/Scenario_* directory")
+    ap.add_argument("scenario", nargs="?", help="path to a Blender_Images/Scenario_* directory")
+    ap.add_argument("--config", help="MC-Calib calib_param.yml — drive the whole run from it")
+    ap.add_argument("--set", action="append", metavar="KEY=VALUE",
+                    help="override a config value (repeatable), e.g. --set save_path=/abs/out")
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--model", default="radtan", help="one model for all cameras")
     g.add_argument("--models", help="comma-separated model per camera (cam 0,1,2,...)")
@@ -57,6 +86,12 @@ def main():
     ap.add_argument("--save-reprojection", action="store_true",
                     help="also write MC-Calib-style reprojection overlay images (needs Images/)")
     args = ap.parse_args()
+
+    if args.config:
+        _run_config(args.config, args.set)
+        return
+    if not args.scenario:
+        ap.error("provide a scenario directory or --config calib_param.yml")
 
     scn = load_scenario(args.scenario)
     spec = _resolve_spec(args, scn.cam_ids)

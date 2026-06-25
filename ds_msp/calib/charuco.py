@@ -1,0 +1,174 @@
+"""ChArUco detection from a raw image folder — MC-Calib's detection front-end in NumPy.
+
+MC-Calib's ``apps/calibrate`` reads a folder of images and detects ChArUco corners with
+``DICT_6X6_1000`` boards created by ``cv::aruco::CharucoBoard::create(n_x, n_y,
+length_square, length_marker, dict)`` (``utilities.cpp:createCharucoBoards``), offsetting
+each subsequent board's marker ids by the cumulative marker count. This module reproduces
+that exactly with OpenCV's modern ``cv2.aruco.CharucoDetector`` API (OpenCV >= 4.7;
+``interpolateCornersCharuco`` was removed at 4.13) so DS-MSP can ingest the *same raw
+images* and produce the same per-(camera, frame, board) corner observations.
+
+The 3-D object model is built directly at the metric ``square_size`` spacing (row-major
+interior corners, matching MC-Calib's ``calibrated_objects_data.yml`` for a single board:
+corner ``k`` at ``((k % ncx)·square_size, (k // ncx)·square_size, 0)``). Multi-board *fused*
+object geometry (inter-board poses) is MC-Calib's board-group reconstruction and is out of
+scope here — pass an existing :class:`Object3D` for multi-board rigs; this module builds the
+single-board object and detects corners for any board count.
+"""
+
+from __future__ import annotations
+
+import glob
+import os
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+
+from ..rig.types import Object3D, ObjectObs
+
+_DICT = cv2.aruco.DICT_6X6_1000
+
+
+@dataclass
+class BoardSpec:
+    """The ChArUco geometry from MC-Calib's config (one entry per board)."""
+    n_x: int
+    n_y: int
+    length_square: float          # marker-generation square length (e.g. 0.04)
+    length_marker: float          # marker-generation marker length (e.g. 0.03)
+    square_size: float            # metric spacing used for the 3-D points (e.g. 0.192)
+
+    @property
+    def n_corners(self) -> int:
+        return (self.n_x - 1) * (self.n_y - 1)
+
+    @property
+    def n_markers(self) -> int:
+        # DICT markers fill the non-chessboard cells: floor(n_x*n_y / 2).
+        return (self.n_x * self.n_y) // 2
+
+
+def _make_board(spec: BoardSpec, dictionary, id_offset: int, legacy: bool):
+    ids = np.arange(spec.n_markers, dtype=np.int32) + id_offset
+    board = cv2.aruco.CharucoBoard(
+        (spec.n_x, spec.n_y), spec.length_square, spec.length_marker, dictionary, ids)
+    # Blender benchmark images were rendered with the pre-4.7 ("legacy") corner pattern;
+    # the modern constructor flips it. setLegacyPattern realigns marker/corner ids so the
+    # detected charuco ids match MC-Calib's (and the legacy renderer's).
+    if legacy and hasattr(board, "setLegacyPattern"):
+        board.setLegacyPattern(True)
+    return board
+
+
+def make_detectors(specs: List[BoardSpec], *, legacy: bool = True):
+    """One :class:`cv2.aruco.CharucoDetector` per board, with MC-Calib's id offsets."""
+    dictionary = cv2.aruco.getPredefinedDictionary(_DICT)
+    detectors, offset = [], 0
+    for spec in specs:
+        board = _make_board(spec, dictionary, offset, legacy)
+        detectors.append(cv2.aruco.CharucoDetector(board))
+        offset += spec.n_markers
+    return detectors
+
+
+def board_object_points(spec: BoardSpec) -> np.ndarray:
+    """``(n_corners, 3)`` interior-corner positions at ``square_size`` spacing, row-major
+    — identical to MC-Calib's single-board ``calibrated_objects_data.yml``."""
+    ncx, ncy = spec.n_x - 1, spec.n_y - 1
+    k = np.arange(ncx * ncy)
+    return np.c_[(k % ncx) * spec.square_size,
+                 (k // ncx) * spec.square_size,
+                 np.zeros(ncx * ncy)].astype(float)
+
+
+def single_board_object(spec: BoardSpec, object_id: int = 0) -> Object3D:
+    """Build an :class:`Object3D` for a single ChArUco board straight from the config."""
+    xyz = board_object_points(spec)
+    n = xyz.shape[0]
+    board_ids = np.zeros(n, int)
+    corner_ids = np.arange(n)
+    b2o = {(0, int(c)): i for i, c in enumerate(corner_ids)}
+    return Object3D(
+        object_id=object_id, board_ids=[0], ref_board_id=0, T_co_b={0: np.eye(4)},
+        pts_3d=xyz, pts_obj_2_board=np.c_[board_ids, corner_ids], pts_board_2_obj=b2o)
+
+
+def _frame_id_from_name(path: str) -> int:
+    """MC-Calib indexes frames by the digits in the filename (``..._000007.png`` -> 7)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    digits = "".join(ch for ch in stem if ch.isdigit())
+    return int(digits) if digits else 0
+
+
+def detect_image(detectors, gray: np.ndarray, *, min_corners: int = 4
+                 ) -> List[Tuple[int, np.ndarray, np.ndarray]]:
+    """Detect every board in one image. Returns ``[(board_id, corner_ids, pts_2d), ...]``
+    with ``corner_ids`` shape ``(m,)`` and ``pts_2d`` shape ``(m, 2)``."""
+    out = []
+    for b, det in enumerate(detectors):
+        ch_corners, ch_ids, _, _ = det.detectBoard(gray)
+        if ch_ids is None or len(ch_ids) < min_corners:
+            continue
+        out.append((b, ch_ids.ravel().astype(int), ch_corners.reshape(-1, 2).astype(float)))
+    return out
+
+
+def detect_folder(image_dir: str, specs: List[BoardSpec], obj: Object3D, cam_id: int, *,
+                  legacy: bool = True, min_corners: int = 4, pattern: str = "*"
+                  ) -> List[ObjectObs]:
+    """Detect ChArUco corners over every image in ``image_dir`` for one camera.
+
+    Returns one :class:`ObjectObs` per (frame, board), with ``point_rows`` indexing
+    ``obj.pts_3d`` via ``(board_id, corner_id)`` — the same observation objects the
+    keypoint reader produces, so the rest of the pipeline is untouched. ``frame_id`` is the
+    raw filename index; :func:`detect_rig` rebases it to MC-Calib's 0-indexed convention.
+    """
+    detectors = make_detectors(specs, legacy=legacy)
+    files = sorted(f for f in glob.glob(os.path.join(image_dir, pattern))
+                   if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")))
+    obs: List[ObjectObs] = []
+    for path in files:
+        gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            continue
+        frame_id = _frame_id_from_name(path)
+        for board_id, corner_ids, pts in detect_image(detectors, gray, min_corners=min_corners):
+            rows, uvs = [], []
+            for cid, uv in zip(corner_ids, pts):
+                key = (board_id, int(cid))
+                if key in obj.pts_board_2_obj:
+                    rows.append(obj.pts_board_2_obj[key])
+                    uvs.append(uv)
+            if len(rows) >= min_corners:
+                obs.append(ObjectObs(object_id=obj.object_id, cam_id=cam_id,
+                                     frame_id=frame_id, point_rows=np.array(rows, int),
+                                     pts_2d=np.array(uvs, float), T_c_o=None))
+    return obs
+
+
+def detect_rig(root_path: str, cam_ids: List[int], specs: List[BoardSpec], obj: Object3D, *,
+               cam_prefix: str = "Cam_", legacy: bool = True, min_corners: int = 4
+               ) -> Tuple[List[ObjectObs], Dict[int, Tuple[int, int]]]:
+    """Detect over ``<root_path>/<cam_prefix><cam+1:03d>/`` for every camera (MC-Calib's
+    1-indexed layout). Returns ``(object_obs, img_size_per_cam)``."""
+    all_obs: List[ObjectObs] = []
+    img_size: Dict[int, Tuple[int, int]] = {}
+    for c in cam_ids:
+        cam_dir = os.path.join(root_path, f"{cam_prefix}{c + 1:03d}")
+        if not os.path.isdir(cam_dir):
+            continue
+        obs = detect_folder(cam_dir, specs, obj, c, legacy=legacy, min_corners=min_corners)
+        all_obs.extend(obs)
+        first = next((f for f in sorted(glob.glob(os.path.join(cam_dir, "*")))
+                      if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp"))), None)
+        if first is not None:
+            im = cv2.imread(first, cv2.IMREAD_GRAYSCALE)
+            if im is not None:
+                img_size[c] = (im.shape[1], im.shape[0])
+    if all_obs:                       # rebase to MC-Calib's 0-indexed frames
+        base = min(o.frame_id for o in all_obs)
+        for o in all_obs:
+            o.frame_id -= base
+    return all_obs, img_size
