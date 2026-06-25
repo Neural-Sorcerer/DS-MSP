@@ -45,6 +45,37 @@ def test_reweight_beats_naive_l2_by_more_than_half_at_20pct():
     assert rwm < 1.0                                        # robust pose stays sub-degree
 
 
+def test_calibrate_rig_default_front_end_robust_to_gross_outliers():
+    """Regression for the focal-collapse fix (R4/R5): the *default* calibrate_rig front-end
+    must be robust. It previously defaulted to plain-L2 cv2.calibrateCamera, which collapsed
+    the focal (~30 px vs GT 800) under 15 % gross outliers and diverged the extrinsics on
+    every seed. The default is now the robust from-scratch front-end + a focal-collapse anchor.
+    """
+    import sys
+    sys.path.insert(0, "tests/rig")
+    from _synth import make_rig                                  # noqa: E402
+    from ds_msp.rig.rig_calibrate import calibrate_rig          # noqa: E402
+
+    def worst_extr(rig, gt):
+        ref = rig.ref_cam_id
+        e = []
+        for c in rig.T_c_g:
+            if c == ref:
+                continue
+            mine = rig.T_c_g[c] @ np.linalg.inv(rig.T_c_g[ref])
+            other = gt[c] @ np.linalg.inv(gt[ref])
+            bm, bo = np.linalg.norm(mine[:3, 3]), np.linalg.norm(other[:3, 3])
+            e.append(100 * abs(bm - bo) / bo if bo > 1e-9 else 0.0)
+        return max(e)
+
+    for seed in range(3):
+        obj, obs, img, gt, _ = make_rig(n_cam=4, n_frame=40, noise_px=0.5,
+                                        outlier_frac=0.15, seed=seed)
+        rig = calibrate_rig(obj, obs, img)                       # default (robust) front-end
+        err = worst_extr(rig, gt)
+        assert err < 2.0, f"seed {seed}: worst extrinsic error {err:.2f}% — focal collapse?"
+
+
 def test_studentize_helps_self_masking_leverage_outlier():
     rng = np.random.default_rng(3)
     ns, st = [], []

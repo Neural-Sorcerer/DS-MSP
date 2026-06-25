@@ -251,7 +251,26 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
                 cands = [_calibrate_single(s, Xcal, uvcal, vis, loss=loss, f_scale=f_scale,
                                            max_nfev=max_nfev)
                          for s in (seed_ma, _seed_from_K(model_cls, Kp))]
-                model = min(cands, key=lambda r: r["rms_px"])["model"]
+                # Focal-collapse anchor: the robust pinhole pre-calibration (RANSAC DLT) gives
+                # a reliable paraxial focal even under gross outliers, but the per-model Cauchy
+                # refine can still slide into a tiny-focal local minimum that absorbs surviving
+                # blunders into distortion (a low-RMS but wrong fit). Reject any candidate whose
+                # paraxial focal departs the seed by >2x; if both collapse, fall back to the
+                # seed focal with neutral distortion and let the global BA fit distortion
+                # through the rigid-rig constraint. The band is wide enough never to fire on a
+                # genuine fisheye (its f_eff still tracks the perspective seed near the axis),
+                # and being per-camera + absolute it survives an all-cameras collapse that the
+                # median-based consensus guard below cannot.
+                foc_seed = 0.5 * (Kp[0, 0] + Kp[1, 1])
+
+                def _focal_ok(m):
+                    fx, fy = paraxial_focal(m)
+                    return (0.5 * foc_seed < fx < 2.0 * foc_seed
+                            and 0.5 * foc_seed < fy < 2.0 * foc_seed)
+
+                ok = [r for r in cands if _focal_ok(r["model"])]
+                model = (min(ok, key=lambda r: r["rms_px"])["model"] if ok
+                         else _seed_from_K(model_cls, Kp))
             else:
                 model = seed_ma
             raw[cam_id] = dict(model=model, obs=obs, cls=model_cls)
@@ -314,8 +333,12 @@ def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
         obs_by_cam[o.cam_id].append(o)
     cam_ids = sorted(obs_by_cam)
 
-    # 1. per-camera intrinsics + object poses (T_c_o)
-    fe = front_end or _front_end_opencv
+    # 1. per-camera intrinsics + object poses (T_c_o). Default to the robust from-scratch
+    #    front-end (RANSAC-DLT seed + per-model Cauchy refine), not the plain-L2
+    #    cv2.calibrateCamera path (`_front_end_opencv`), which collapses the focal under
+    #    gross outliers — so a direct calibrate_rig caller gets the robust behaviour the
+    #    high-level entry points already use, without having to know to pass front_end.
+    fe = front_end or make_bundle_front_end(RadTanModel)
     cameras = fe(obj, obs_by_cam, img_size)
     if verbose:
         print(f"[front-end] calibrated {len(cameras)} cameras")
