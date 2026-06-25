@@ -33,10 +33,10 @@ def _build_small_rig():
                     object_poses=object_poses, objects={0: obj}, img_size=img_size), obs
 
 
-def _check(fix_intrinsics):
+def _check(fix_intrinsics, fix_extrinsics=False):
     rig, obs = _build_small_rig()
     state0, residual, jacobian, retract, K = ba.build_problem(
-        rig, obs, fix_intrinsics=fix_intrinsics)
+        rig, obs, fix_intrinsics=fix_intrinsics, fix_extrinsics=fix_extrinsics)
     J = jacobian(state0)
     r0 = residual(state0)
     eps = 1e-6
@@ -48,7 +48,8 @@ def _check(fix_intrinsics):
         rm = residual(retract(state0, -d))
         fd = (rp - rm) / (2 * eps)
         assert np.allclose(J[:, j], fd, atol=1e-3, rtol=1e-3), \
-            f"Jacobian column {j} mismatch (fix_intrinsics={fix_intrinsics})"
+            f"Jacobian column {j} mismatch (fix_intrinsics={fix_intrinsics}, " \
+            f"fix_extrinsics={fix_extrinsics})"
 
 
 def test_jacobian_poses_only():
@@ -57,3 +58,8 @@ def test_jacobian_poses_only():
 
 def test_jacobian_with_intrinsics():
     _check(fix_intrinsics=False)
+
+
+def test_jacobian_object_poses_only():
+    # the per-object intermediate stage: cameras + intrinsics fixed, only object poses
+    _check(fix_intrinsics=True, fix_extrinsics=True)

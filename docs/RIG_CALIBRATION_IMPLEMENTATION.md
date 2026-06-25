@@ -783,20 +783,41 @@ accuracy. OCam is selectable and round-trips in MC-Calib format but is excluded 
 pool: its from-scratch forward-polynomial init is not yet robust on every real camera (it
 diverged the rig when it landed on the reference camera), so it is opt-in rather than validated.
 
-**Hierarchy & analytic derivatives (audited).** MC-Calib's robustness comes from a hierarchy
+**Hierarchy & analytic derivatives.** MC-Calib's robustness comes from a hierarchy
 (BoardObs → Object3D → Object3DObs → Camera → CameraGroup → CameraGroupObs) with analytic Ceres
 costs. DS-MSP carries the same hierarchy as data (`rig/types.py`: `BoardObs`, `Object3D`,
 `ObjectObs`, `RigState.cameras` / `T_c_g` / `object_poses`) and its BA is **fully analytic,
 hand-derived SE(3) right-perturbation Jacobians — no autodiff, no finite difference** (the model
-`project_jacobian` is closed-form; `ba._obs_blocks` builds the `-R[·]_×` pose blocks; the
-solver is the from-scratch sparse Schur LM). The optimization is staged hierarchically:
-per-camera intrinsic BA (front-end) → robust closed-form extrinsics/object-pose init →
-poses-only BA → joint BA. The one stage MC-Calib has that DS-MSP folds into the global BA is the
-**per-object / per-camera-group intermediate refinement**; for the single-object, single-group
-benchmark rigs that stage *coincides* with the global BA, and the measured parity (≤0.001 % vs
-MC-Calib) confirms the robust-init + staged-robust-BA path reaches the same optimum. Splitting it
-out as an explicit per-group warm-start matters only for multi-group (non-overlapping) rigs and
-is the documented next step there.
+`project_jacobian` is closed-form; `ba._obs_blocks` builds the `-R[·]_×` pose blocks; the solver
+is the from-scratch sparse Schur LM). The optimization runs **MC-Calib's hierarchy of explicit
+intermediate refinements**, every one an analytic-Jacobian BA (`tests/rig/test_ba_jacobian.py`
+finite-difference-checks all three modes):
+
+1. **per-camera intrinsic BA** — the front-end (`calib.bundle.calibrate`) per camera;
+2. **per-object refinement** (`ba.refine(fix_extrinsics=True, fix_intrinsics=True)`) — refine
+   each frame's object pose with cameras + intrinsics held (`estimatePoseAllObjects` /
+   `computeAllObjPoseInCameraGroup`), a metric warm-up of the closed-form averaged poses;
+3. **per-camera-group refinement** (`ba.refine_groups`) — refine each group's extrinsics + its
+   object poses, intrinsics fixed (`calibrateCameraGroup` / `refineAllCameraGroupAndObjects`);
+   a single connected group refines the whole rig, several groups refine independently before the
+   joint pass;
+4. **global joint BA** (`ba.refine(fix_intrinsics=…)`, redescending Cauchy + GNC) —
+   `refineAllCameraGroupAndObjectsAndIntrinsics`.
+
+`fix_extrinsics` (cameras held → only object poses move) was added to `build_problem` /
+`build_schur_problem` so stage 2 reuses the exact same analytic chain.
+
+**Evaluation (the big table).** `scripts/evaluate_rig_datasets.py` calibrates every Blender
+scenario with a random valid model per camera, intrinsics **ON and OFF**, writes the complete
+MC-Calib output folder per run (optimized `.yaml` set + `detected_keypoints_data.yml` +
+`Detection/` and `Reprojection/` overlay images), and tabulates the optimized parameters against
+both ground truth and MC-Calib's own calibration (`docs/RIG_EVALUATION_TABLE.md`). Result:
+**extrinsics within 0.16 % of GT and intrinsics (paraxial focal) within 0.22 % of MC-Calib's
+calibration, for every camera, both modes.** A few cameras show a ~4 % focal gap *to GT* — but
+that focal is **inherently unrecoverable from their views**: MC-Calib's own focal deviates from
+GT by the same ~3.5 % there, and DS-MSP agrees with MC-Calib to < 0.01 %, i.e. DS-MSP is exactly
+as close to ground truth as MC-Calib is. Where the focal is observable, DS-MSP recovers it to
+< 0.6 % of GT.
 
 ## 14. Relationship to the other docs
 

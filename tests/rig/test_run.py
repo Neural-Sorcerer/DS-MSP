@@ -62,3 +62,31 @@ def test_random_assignment_runs_within_1pct(tmp_path):
     spec = random_model_assignment(scn.cam_ids, kind="pinhole", seed=3)
     res = calibrate_scenario(scn, spec, save_dir=str(tmp_path))
     assert res["metrics"]["worst_baseline_pct_vs_gt"] < 1.0
+
+
+def test_intrinsics_and_extrinsics_within_1pct():
+    """Both the optimized intrinsics (paraxial focal vs GT) and the extrinsics (baseline vs
+    GT) land within 1% with a random per-camera model — the headline guarantee."""
+    from ds_msp.rig.run import intrinsics_error, baseline_error_per_camera
+    scn, _ = _scenario(seed=4)
+    spec = random_model_assignment(scn.cam_ids, kind="pinhole", seed=5)
+    res = calibrate_scenario(scn, spec)
+    rig = res["rig"]
+    ie = intrinsics_error(rig, {c: scn.gt[c].K for c in scn.gt})
+    base = baseline_error_per_camera(rig, scn)
+    assert max(v["focal_pct"] for v in ie.values()) < 1.0, ie
+    assert max(v for v in base.values()) < 1.0, base
+
+
+def test_intermediate_refinement_stages_run():
+    """The per-object (fix_extrinsics) and per-camera-group stages run with analytic
+    Jacobians and keep the fit consistent (reprojection stays sub-pixel)."""
+    from ds_msp.rig import ba
+    scn, _ = _scenario(seed=6)
+    res = calibrate_scenario(scn, "radtan")
+    rig = res["rig"]
+    # per-object stage: object poses only, cameras+intrinsics fixed
+    r1 = ba.refine(rig, scn.object_obs, fix_intrinsics=True, fix_extrinsics=True, max_iter=10)
+    # per-group stage on the (single) group
+    r2 = ba.refine_groups(r1, scn.object_obs, [sorted(rig.cameras)], max_iter=10)
+    assert max(ba.reprojection_rms(r2, scn.object_obs).values()) < 1.0

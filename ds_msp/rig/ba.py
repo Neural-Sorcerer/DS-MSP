@@ -57,14 +57,18 @@ def _rig_from_state(rig: RigState, state: dict) -> RigState:
 
 
 def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
-                  fix_intrinsics: bool = True):
+                  fix_intrinsics: bool = True, fix_extrinsics: bool = False):
     """Assemble the BA callbacks ``(state0, residual, jacobian, retract, K)`` for one
     pass, without solving. ``residual``/``jacobian``/``retract`` follow the
     :func:`core.optimize.lm_solve` contract; ``K`` is the tangent dimension. Exposed so
     tests can finite-difference-check the analytic Jacobian (the chain in §9.1 of the
-    implementation doc)."""
+    implementation doc).
+
+    ``fix_extrinsics=True`` holds all camera poses fixed and refines only the per-frame
+    object poses (the per-object intermediate refinement); combined with
+    ``fix_intrinsics=True`` it is the pure object-pose stage."""
     ref_cam = rig.ref_cam_id
-    cam_ids = [c for c in sorted(rig.cameras) if c != ref_cam]
+    cam_ids = [] if fix_extrinsics else [c for c in sorted(rig.cameras) if c != ref_cam]
     obj_keys = sorted(rig.object_poses)
     classes = {c: type(rig.cameras[c]) for c in rig.cameras}
     Pn = {c: len(classes[c].param_names) for c in rig.cameras}
@@ -193,7 +197,7 @@ def _obs_blocks(model, R_cam, R_obj, Xo, Xg, Xc, pts_2d, want_intr):
 
 
 def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
-                        fix_intrinsics: bool = True):
+                        fix_intrinsics: bool = True, fix_extrinsics: bool = False):
     """Assemble the rig BA for :func:`core.optimize.schur_lm`, mapping the **per-frame
     object poses to the eliminated block-diagonal ``local`` blocks** and
     ``{camera extrinsics, intrinsics}`` to the ``shared`` block.
@@ -207,7 +211,7 @@ def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
     Returns ``(state0, residual, linearize, retract, shared_dim, n_groups)``.
     """
     ref_cam = rig.ref_cam_id
-    cam_ids = [c for c in sorted(rig.cameras) if c != ref_cam]
+    cam_ids = [] if fix_extrinsics else [c for c in sorted(rig.cameras) if c != ref_cam]
     classes = {c: type(rig.cameras[c]) for c in rig.cameras}
     Pn = {c: len(classes[c].param_names) for c in rig.cameras}
     bounds = {c: classes[c].param_bounds() for c in rig.cameras}
@@ -303,13 +307,15 @@ def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
 
 
 def refine(rig: RigState, object_obs: List[ObjectObs], *,
-           fix_intrinsics: bool = True, max_iter: int = 60,
+           fix_intrinsics: bool = True, fix_extrinsics: bool = False, max_iter: int = 60,
            robust_kernel: str = "huber", robust_scale="auto", gnc_iters: int = 0,
            gnc_start: float = 0.0, verbose: bool = False, sparse: bool = True) -> RigState:
     """One BA pass. Returns a refined copy of ``rig``.
 
     ``fix_intrinsics=True`` reproduces ``refineCameraGroupAndObjects`` (poses only);
     ``False`` reproduces ``refineCameraGroupAndObjectsAndIntrinsics`` (full joint).
+    ``fix_extrinsics=True`` (cameras held) refines only the object poses — the per-object
+    intermediate stage (``estimatePoseAllObjects`` / ``computeAllObjPoseInCameraGroup``).
 
     **Robust weighting, no rejection.** Every observation is kept; outliers are
     down-weighted by IRLS (``w = ρ'(r)/r``). ``robust_scale="auto"`` re-estimates the
@@ -326,15 +332,16 @@ def refine(rig: RigState, object_obs: List[ObjectObs], *,
               gnc_iters=gnc_iters, gnc_start=gnc_start)
     if sparse:
         state0, residual, linearize, retract, shared_dim, n_groups = build_schur_problem(
-            rig, object_obs, fix_intrinsics=fix_intrinsics)
+            rig, object_obs, fix_intrinsics=fix_intrinsics, fix_extrinsics=fix_extrinsics)
         if shared_dim == 0 or n_groups == 0:           # nothing shared to solve -> dense
-            return refine(rig, object_obs, fix_intrinsics=fix_intrinsics, max_iter=max_iter,
+            return refine(rig, object_obs, fix_intrinsics=fix_intrinsics,
+                          fix_extrinsics=fix_extrinsics, max_iter=max_iter,
                           verbose=verbose, sparse=False, **rk)
         res = schur_lm(state0, residual, linearize, retract, n_groups=n_groups,
                        shared_dim=shared_dim, local_dim=6, block=2, max_iter=max_iter, **rk)
     else:
         state0, residual, jacobian, retract, K = build_problem(
-            rig, object_obs, fix_intrinsics=fix_intrinsics)
+            rig, object_obs, fix_intrinsics=fix_intrinsics, fix_extrinsics=fix_extrinsics)
         if K == 0:
             return rig
         res = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_iter, **rk)
@@ -343,6 +350,40 @@ def refine(rig: RigState, object_obs: List[ObjectObs], *,
               f"intr={'free' if not fix_intrinsics else 'fixed'} "
               f"{'sparse' if sparse else 'dense'} kernel={robust_kernel}")
     return _rig_from_state(rig, res.state)
+
+
+def refine_groups(rig: RigState, object_obs: List[ObjectObs], groups: List[List[int]],
+                  **kw) -> RigState:
+    """Per-camera-group intermediate refinement (``calibrateCameraGroup`` /
+    ``refineAllCameraGroupAndObjects``): refine **each group independently** — its camera
+    extrinsics (anchored at the group's first camera) plus the object poses its cameras
+    observe — holding intrinsics fixed, with the same analytic-Jacobian BA. For a single
+    connected group this refines the whole rig; for several groups it warm-starts each one
+    before they are fused, exactly MC-Calib's hierarchy. ``kw`` forwards robust-kernel opts.
+    """
+    if len(groups) <= 1:
+        return refine(rig, object_obs, fix_intrinsics=True, **kw)
+    out = copy.copy(rig)
+    out.T_c_g = dict(rig.T_c_g)
+    out.object_poses = dict(rig.object_poses)
+    out.cameras = dict(rig.cameras)
+    for grp in groups:
+        grp_set = set(grp)
+        sub_obs = [o for o in object_obs if o.cam_id in grp_set]
+        sub_keys = {(o.object_id, o.frame_id) for o in sub_obs} & set(out.object_poses)
+        if len(grp) < 2 or not sub_keys:
+            continue
+        sub = copy.copy(out)
+        sub.cameras = {c: out.cameras[c] for c in grp}
+        sub.T_c_g = {c: out.T_c_g[c] for c in grp}
+        sub.object_poses = {k: out.object_poses[k] for k in sub_keys}
+        sub.ref_cam_id = grp[0]                         # anchor the group at its first camera
+        ref = refine(sub, sub_obs, fix_intrinsics=True, **kw)
+        for c in grp:
+            out.T_c_g[c] = ref.T_c_g[c]
+        for k in sub_keys:
+            out.object_poses[k] = ref.object_poses[k]
+    return out
 
 
 def _per_obs_errors(rig: RigState, object_obs: List[ObjectObs]) -> Dict[int, np.ndarray]:

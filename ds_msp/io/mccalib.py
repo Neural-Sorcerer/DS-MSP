@@ -315,6 +315,90 @@ def save_reprojection_images(rig, object_obs, image_root: str, save_dir: str, *,
     return written
 
 
+def _write_int_seq(fs, name, values):
+    fs.startWriteStruct(name, cv2.FileNode_SEQ + cv2.FileNode_FLOW)
+    for v in values:
+        fs.write("", int(v))
+    fs.endWriteStruct()
+
+
+def _write_seq_of_seqs(fs, name, arrays, cast=float):
+    fs.startWriteStruct(name, cv2.FileNode_SEQ)
+    for arr in arrays:
+        fs.startWriteStruct("", cv2.FileNode_SEQ + cv2.FileNode_FLOW)
+        for v in arr:
+            fs.write("", cast(v))
+        fs.endWriteStruct()
+    fs.endWriteStruct()
+
+
+def save_mccalib_detected_keypoints(object_obs, obj: Object3D, img_size, path: str) -> None:
+    """Write ``detected_keypoints_data.yml`` in MC-Calib's schema (McCalib.cpp:507): per
+    ``camera_<i>`` the parallel, per-board-observation sequences ``frame_idxs`` / ``board_idxs``
+    (inline) and ``pts_2d`` / ``charuco_idxs`` (sequence of inline ``[u,v,...]`` / corner-id
+    arrays), plus ``img_width`` / ``img_height``. DS-MSP fuses boards into one object, so each
+    point is mapped back to its ``(board_id, corner_id)`` via ``obj.pts_obj_2_board`` and the
+    per-frame observation is split by board — round-trip-identical to the reader."""
+    by_cam: Dict[int, List] = {}
+    for o in object_obs:
+        by_cam.setdefault(o.cam_id, []).append(o)
+    b2 = obj.pts_obj_2_board                                  # (N,2) = [board_id, corner_id]
+    fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
+    fs.write("nb_camera", int(len(by_cam)))
+    for cam in sorted(by_cam):
+        w, h = img_size.get(cam, (0, 0))
+        frame_idxs, board_idxs, pts_2d, charuco = [], [], [], []
+        for o in sorted(by_cam[cam], key=lambda x: x.frame_id):
+            bc = b2[o.point_rows]                            # (n,2)
+            for bid in np.unique(bc[:, 0]):
+                m = bc[:, 0] == bid
+                frame_idxs.append(o.frame_id)
+                board_idxs.append(int(bid))
+                pts_2d.append(np.asarray(o.pts_2d, float)[m].ravel())
+                charuco.append(bc[m, 1])
+        fs.startWriteStruct(f"camera_{cam}", cv2.FileNode_MAP)
+        fs.write("img_width", int(w))
+        fs.write("img_height", int(h))
+        _write_int_seq(fs, "frame_idxs", frame_idxs)
+        _write_int_seq(fs, "board_idxs", board_idxs)
+        _write_seq_of_seqs(fs, "pts_2d", pts_2d, cast=float)
+        _write_seq_of_seqs(fs, "charuco_idxs", charuco, cast=int)
+        fs.endWriteStruct()
+    fs.release()
+
+
+def save_detection_images(object_obs, image_root: str, save_dir: str, *,
+                          cam_prefix: str = "Cam_", ext: str = "png") -> int:
+    """Draw detected corners (green) per frame and save under
+    ``<save_dir>/Detection/<cam:03d>/<frame:06d>.jpg`` — MC-Calib's ``saveDetectionImages``
+    layout. Returns the number of images written (0 if no source images found)."""
+    root = os.path.join(save_dir, "Detection")
+    by_cf: Dict[Tuple[int, int], List] = {}
+    for o in object_obs:
+        by_cf.setdefault((o.cam_id, o.frame_id), []).append(o)
+    written = 0
+    for (cam, fr), obs_list in by_cf.items():
+        img_path = None
+        for cand in (f"{fr + 1:05d}.{ext}", f"{fr:05d}.{ext}", f"{fr + 1:06d}.{ext}"):
+            p = os.path.join(image_root, f"{cam_prefix}{cam + 1:03d}", cand)
+            if os.path.exists(p):
+                img_path = p
+                break
+        if img_path is None:
+            continue
+        image = cv2.imread(img_path)
+        if image is None:
+            continue
+        for o in obs_list:
+            for u, v in np.asarray(o.pts_2d, float):
+                cv2.circle(image, (int(round(u)), int(round(v))), 4, (0, 255, 0), cv2.FILLED, 8)
+        out_dir = os.path.join(root, f"{cam:03d}")
+        os.makedirs(out_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(out_dir, f"{fr:06d}.jpg"), image)
+        written += 1
+    return written
+
+
 def save_mccalib_results(rig, save_dir: str, *, object3d: Optional[Object3D] = None,
                          object_obs=None, cam_groups: Optional[Dict[int, int]] = None,
                          camera_params_file_name: str = "") -> Dict[str, str]:
@@ -337,6 +421,9 @@ def save_mccalib_results(rig, save_dir: str, *, object3d: Optional[Object3D] = N
     if object_obs is not None:
         paths["reprojection_error"] = os.path.join(save_dir, "reprojection_error_data.yml")
         save_mccalib_reprojection_error(rig, object_obs, paths["reprojection_error"])
+        if obj is not None:
+            paths["keypoints"] = os.path.join(save_dir, "detected_keypoints_data.yml")
+            save_mccalib_detected_keypoints(object_obs, obj, rig.img_size, paths["keypoints"])
     return paths
 
 

@@ -348,13 +348,20 @@ def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
     rig = RigState(cameras=cameras, T_c_g=extr, ref_cam_id=ref_cam,
                    object_poses=object_poses, objects={0: obj}, img_size=img_size)
 
-    # 4. staged global BA with robust IRLS weighting (no rejection):
-    #    - poses-only: Huber + MAD auto-scale (bounded; safe while the init is still rough)
-    #    - full joint: redescending Cauchy + MAD auto-scale with a short GNC anneal, so
-    #      gross outliers are smoothly muted without being thrown away.
-    rig = ba.refine(rig, object_obs, fix_intrinsics=True,
+    # 4. hierarchical refinement, MC-Calib's staged structure, every stage an analytic-
+    #    Jacobian BA (no autodiff), robust IRLS weighting (no rejection):
+    #    (a) per-object — refine each frame's object pose with cameras+intrinsics fixed
+    #        (estimatePoseAllObjects / computeAllObjPoseInCameraGroup): a metric BA warm-up
+    #        of the closed-form averaged object poses before any extrinsic moves.
+    rig = ba.refine(rig, object_obs, fix_intrinsics=True, fix_extrinsics=True,
                     robust_kernel="huber", robust_scale="auto", verbose=verbose)
-    if not fix_intrinsics:
-        rig = ba.refine(rig, object_obs, fix_intrinsics=False, robust_kernel="cauchy",
-                        robust_scale="auto", gnc_iters=5, gnc_start=4.0, verbose=verbose)
+    #    (b) per-camera-group — refine each group's extrinsics + its object poses, intrinsics
+    #        fixed (calibrateCameraGroup / refineAllCameraGroupAndObjects). Single group ->
+    #        whole-rig poses-only; multiple groups -> each independently before the joint pass.
+    rig = ba.refine_groups(rig, object_obs, groups,
+                           robust_kernel="huber", robust_scale="auto", verbose=verbose)
+    #    (c) global joint — full rig + (optionally) intrinsics with a redescending Cauchy
+    #        kernel and a short GNC anneal (refineAllCameraGroupAndObjectsAndIntrinsics).
+    rig = ba.refine(rig, object_obs, fix_intrinsics=fix_intrinsics, robust_kernel="cauchy",
+                    robust_scale="auto", gnc_iters=5, gnc_start=4.0, verbose=verbose)
     return rig

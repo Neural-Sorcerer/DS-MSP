@@ -13,11 +13,13 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-from ..io.mccalib import Scenario, save_mccalib_results, save_reprojection_images
+from ..io.mccalib import (Scenario, save_detection_images, save_mccalib_results,
+                          save_reprojection_images)
 from ..models.registry import (FISHEYE_MODELS, PINHOLE_MODELS, canonical_name,
                                model_class)
 from . import ba
-from .rig_calibrate import _gated_pnp, calibrate_rig, make_bundle_front_end
+from .rig_calibrate import (_gated_pnp, calibrate_rig, make_bundle_front_end,
+                            paraxial_focal)
 from .types import RigState
 
 
@@ -79,16 +81,62 @@ def calibrate_scenario(scn: Scenario, model_spec, *, fix_intrinsics: bool = Fals
                                      object_obs=scn.object_obs,
                                      camera_params_file_name=camera_params_file_name)
         if image_root is not None:
-            n = save_reprojection_images(rig, scn.object_obs, image_root, save_dir,
-                                         cam_prefix=cam_prefix)
-            paths["reprojection_images"] = f"Reprojection/ ({n} images)"
+            nr = save_reprojection_images(rig, scn.object_obs, image_root, save_dir,
+                                          cam_prefix=cam_prefix)
+            nd = save_detection_images(scn.object_obs, image_root, save_dir,
+                                       cam_prefix=cam_prefix)
+            paths["reprojection_images"] = f"Reprojection/ ({nr} images)"
+            paths["detection_images"] = f"Detection/ ({nd} images)"
     metrics = _scenario_metrics(rig, scn)
     return {"rig": rig, "models": {c: rig.cameras[c].name for c in rig.cameras},
             "paths": paths, "metrics": metrics}
 
 
+def intrinsics_error(rig: RigState, ref_K: Dict[int, np.ndarray]) -> Dict[int, Dict[str, float]]:
+    """Per-camera intrinsic error vs a reference ``K`` per camera, model-independent.
+
+    Compares the **paraxial focal** ``f_eff`` (the focal that means the same in every model,
+    so a camera calibrated with DS / UCM / EUCM is checked against the same physical lens) and
+    the principal point. Returns ``{ref_fx, ref_fy, opt_fx, opt_fy, focal_pct, cx_pct, cy_pct}``.
+    """
+    out = {}
+    for c in rig.cameras:
+        if c not in ref_K or ref_K[c] is None:
+            continue
+        Kr = np.asarray(ref_K[c], float)
+        rfx, rfy, rcx, rcy = Kr[0, 0], Kr[1, 1], Kr[0, 2], Kr[1, 2]
+        fx, fy = paraxial_focal(rig.cameras[c])
+        Kc = rig.cameras[c].K
+        out[c] = {
+            "ref_fx": float(rfx), "ref_fy": float(rfy), "opt_fx": float(fx), "opt_fy": float(fy),
+            "focal_pct": 100.0 * max(abs(fx - rfx) / rfx, abs(fy - rfy) / rfy),
+            "cx_pct": 100.0 * abs(Kc[0, 2] - rcx) / abs(rcx) if rcx else float("nan"),
+            "cy_pct": 100.0 * abs(Kc[1, 2] - rcy) / abs(rcy) if rcy else float("nan"),
+        }
+    return out
+
+
 def _rel(Tref, Ti):
     return Ti @ np.linalg.inv(Tref)
+
+
+def baseline_error_per_camera(rig: RigState, scn: Scenario) -> Dict[int, float]:
+    """Per-camera inter-camera baseline error (%) vs GT. GT poses are camera->world;
+    ``T_c_g`` is world->camera, so invert before forming the relative transform."""
+    ref = rig.ref_cam_id
+    gt = scn.gt
+    if ref not in gt:
+        return {}
+    out = {}
+    for c in rig.T_c_g:
+        if c == ref or c not in gt:
+            continue
+        mine = _rel(rig.T_c_g[ref], rig.T_c_g[c])
+        other = _rel(np.linalg.inv(gt[ref].pose), np.linalg.inv(gt[c].pose))
+        b_other = np.linalg.norm(other[:3, 3])
+        out[c] = 100.0 * abs(np.linalg.norm(mine[:3, 3]) - b_other) / b_other if b_other > 1e-9 \
+            else float("nan")
+    return out
 
 
 def _scenario_metrics(rig: RigState, scn: Scenario) -> Dict:
