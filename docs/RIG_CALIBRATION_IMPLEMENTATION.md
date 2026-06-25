@@ -749,6 +749,55 @@ camera" test). Measured over many seeds (`scripts/validate_param_pose.py`,
   geometry**, so the extrinsics live in SE(3); the robust transform consensus and BA both
   operate on SE(3) and that is all that is needed.
 
+### 13f. MC-Calib parity — per-camera model of choice, exact output, both optimize modes
+
+The rig is now a drop-in MC-Calib analogue end-to-end: pick a model **per camera**, optimize
+extrinsics-only or intrinsics+extrinsics, run on a real dataset, and write MC-Calib's exact
+files. Entry points: `ds_msp/rig/run.py` (`calibrate_scenario`) and `scripts/calibrate_rig.py`.
+
+* **Per-camera model selection.** `make_bundle_front_end` accepts a `{cam_id: model}` map (or
+  one model for all). Models resolve through `ds_msp/models/registry.py`, which bridges
+  MC-Calib spellings (`double_sphere`) and DS-MSP spellings (`ds`) and the legacy
+  `distortion_per_camera` ints (0=radtan, 1=kb) — so camera 0 can be RadTan, camera 1 Double
+  Sphere, camera 2 UCM, exactly like MC-Calib's `camera_models` config field.
+* **Both optimize modes.** `fix_intrinsics=False` estimates intrinsics+extrinsics;
+  `fix_intrinsics=True` takes given intrinsics (`init_cameras`) and solves extrinsics only via a
+  fixed-intrinsic front-end (`make_fixed_intrinsic_front_end`) + poses-only BA — MC-Calib's
+  `fix_intrinsic: 1`.
+* **Exact output format.** `io/mccalib.py` writers produce byte-compatible OpenCV-YAML:
+  `calibrated_cameras_data.yml` (`nb_camera`; per `camera_<i>`: `camera_matrix`,
+  `distortion_vector`, `camera_model`, `camera_group`, `img_width/height`, and
+  `camera_pose_matrix` = **camera→world** = `inv(T_c_g)`), `calibrated_objects_data.yml` (the
+  `(5,N)` `[x,y,z,board_id,corner_id]` points), `calibrated_objects_pose_data.yml` (`(6,M)`
+  `[rx,ry,rz,tx,ty,tz]`), `reprojection_error_data.yml` (per group/frame/camera `error_list`),
+  and MC-Calib-style `Reprojection/<cam:03d>/<frame:06d>.jpg` overlays (green detected / red
+  reprojected). Structurally identical to MC-Calib's own files.
+
+**Validation on the real Blender datasets** (`scripts/validate_rig_models.py`): each camera is
+assigned a **random valid model** and the rig is calibrated from MC-Calib's own detected
+keypoints. Pinhole cameras draw from {radtan, ucm, eucm, ds}, fisheye from {kb, ucm, eucm, ds}
+(KB is fisheye-only; RadTan pinhole-only; the sphere models do both). Across Scenario_1–5
+(2–5 cameras) and 3 seeds each, **worst inter-camera baseline error vs ground truth ≤ 0.15 %,
+and ≤ 0.001 % vs MC-Calib's own result** — i.e. any per-camera model choice reproduces MC-Calib
+accuracy. OCam is selectable and round-trips in MC-Calib format but is excluded from the random
+pool: its from-scratch forward-polynomial init is not yet robust on every real camera (it
+diverged the rig when it landed on the reference camera), so it is opt-in rather than validated.
+
+**Hierarchy & analytic derivatives (audited).** MC-Calib's robustness comes from a hierarchy
+(BoardObs → Object3D → Object3DObs → Camera → CameraGroup → CameraGroupObs) with analytic Ceres
+costs. DS-MSP carries the same hierarchy as data (`rig/types.py`: `BoardObs`, `Object3D`,
+`ObjectObs`, `RigState.cameras` / `T_c_g` / `object_poses`) and its BA is **fully analytic,
+hand-derived SE(3) right-perturbation Jacobians — no autodiff, no finite difference** (the model
+`project_jacobian` is closed-form; `ba._obs_blocks` builds the `-R[·]_×` pose blocks; the
+solver is the from-scratch sparse Schur LM). The optimization is staged hierarchically:
+per-camera intrinsic BA (front-end) → robust closed-form extrinsics/object-pose init →
+poses-only BA → joint BA. The one stage MC-Calib has that DS-MSP folds into the global BA is the
+**per-object / per-camera-group intermediate refinement**; for the single-object, single-group
+benchmark rigs that stage *coincides* with the global BA, and the measured parity (≤0.001 % vs
+MC-Calib) confirms the robust-init + staged-robust-BA path reaches the same optimum. Splitting it
+out as an explicit per-group warm-start matters only for multi-group (non-overlapping) rigs and
+is the documented next step there.
+
 ## 14. Relationship to the other docs
 
 - `RIG_CALIBRATION_PLAN.md` — the *what/where* (gap analysis, 8 concepts, file layout, phased

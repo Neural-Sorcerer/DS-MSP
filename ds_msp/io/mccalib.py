@@ -157,6 +157,189 @@ def load_scenario(scn_dir: str) -> Scenario:
     )
 
 
+def _T_to_rodrigues(T: np.ndarray):
+    """4x4 transform -> (rvec(3,), tvec(3,)) like MC-Calib's getPoseVec."""
+    rvec = cv2.Rodrigues(np.asarray(T[:3, :3], float))[0].ravel()
+    return rvec, np.asarray(T[:3, 3], float).ravel()
+
+
+def save_mccalib_cameras(rig, path: str, *, cam_groups: Optional[Dict[int, int]] = None,
+                         cam_order=None) -> None:
+    """Write ``calibrated_cameras_data.yml`` in MC-Calib's exact OpenCV-YAML schema.
+
+    Per ``Calibration::saveCamerasParams`` (McCalib.cpp:386): a top-level ``nb_camera`` and,
+    for each camera, a ``camera_<i>`` map with ``camera_matrix`` (3x3), ``distortion_vector``
+    (1xN), ``camera_model`` (string), ``camera_group``, ``img_width``, ``img_height`` and
+    ``camera_pose_matrix`` — the **camera->world** pose, i.e. ``inv(T_c_g)`` (MC-Calib writes
+    ``getCameraPoseMat().inv()``; ``RigState.T_c_g`` is the world->camera projection extrinsic).
+    """
+    from ..models.registry import mccalib_name
+    order = list(cam_order) if cam_order is not None else sorted(rig.cameras)
+    groups = cam_groups or {c: 0 for c in order}
+    fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
+    fs.write("nb_camera", int(len(order)))
+    for c in order:
+        model = rig.cameras[c]
+        w, h = rig.img_size.get(c, (0, 0))
+        cam2world = np.linalg.inv(np.asarray(rig.T_c_g[c], float))
+        fs.startWriteStruct(f"camera_{c}", cv2.FileNode_MAP)
+        fs.write("camera_matrix", np.asarray(model.K, float))
+        fs.write("distortion_vector",
+                 np.asarray(model.distortion, float).reshape(1, -1))
+        fs.write("camera_model", mccalib_name(model.name))
+        fs.write("camera_group", int(groups.get(c, 0)))
+        fs.write("img_width", int(w))
+        fs.write("img_height", int(h))
+        fs.write("camera_pose_matrix", cam2world)
+        fs.endWriteStruct()
+    fs.release()
+
+
+def save_mccalib_objects(obj: Object3D, path: str) -> None:
+    """Write ``calibrated_objects_data.yml`` (McCalib.cpp:427): per ``object_<j>`` a
+    ``points`` matrix of shape ``(5, N)`` whose rows are ``[x, y, z, board_id, corner_id]``."""
+    rows = obj.pts_obj_2_board                                   # (N,2) = [board_id, corner_id]
+    pts = np.vstack([obj.pts_3d.T, rows[:, 0], rows[:, 1]]).astype(np.float32)  # (5,N)
+    fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
+    fs.startWriteStruct(f"object_{obj.object_id}", cv2.FileNode_MAP)
+    fs.write("points", pts)
+    fs.endWriteStruct()
+    fs.release()
+
+
+def save_mccalib_object_poses(rig, path: str, *, object_id: int = 0) -> None:
+    """Write ``calibrated_objects_pose_data.yml`` (McCalib.cpp:469): per ``object_<j>`` a
+    ``poses`` matrix ``(6, M)`` of ``[rx, ry, rz, tx, ty, tz]`` over the frames the object is
+    seen, ``T_g_o`` (object->group)."""
+    keys = sorted(k for k in rig.object_poses if k[0] == object_id)
+    pose_mat = np.zeros((6, len(keys)), float)
+    for a, key in enumerate(keys):
+        rvec, tvec = _T_to_rodrigues(rig.object_poses[key])
+        pose_mat[:3, a] = rvec
+        pose_mat[3:, a] = tvec
+    fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
+    fs.startWriteStruct(f"object_{object_id}", cv2.FileNode_MAP)
+    fs.write("poses", pose_mat)
+    fs.endWriteStruct()
+    fs.release()
+
+
+def _obs_reprojection(rig, o):
+    """Detected vs reprojected pixels for one ObjectObs: ``(uv_det, uv_rep, valid)``.
+
+    Reproject the object's 3D points through ``T_c_o = T_c_g[cam] @ T_g_o`` and the camera's
+    model — the same composition MC-Calib uses (``getCameraPoseMat * getPoseInGroupMat``)."""
+    cam = o.cam_id
+    key = (o.object_id, o.frame_id)
+    if cam not in rig.cameras or key not in rig.object_poses or cam not in rig.T_c_g:
+        return None
+    obj = next(iter(rig.objects.values()))
+    X = obj.pts_3d[o.point_rows]
+    T_c_o = np.asarray(rig.T_c_g[cam], float) @ np.asarray(rig.object_poses[key], float)
+    Xc = (T_c_o[:3, :3] @ X.T).T + T_c_o[:3, 3]
+    uv_rep, valid = rig.cameras[cam].project(Xc)
+    return np.asarray(o.pts_2d, float), uv_rep, valid
+
+
+def save_mccalib_reprojection_error(rig, object_obs, path: str, *, cam_group: int = 0) -> None:
+    """Write ``reprojection_error_data.yml`` in MC-Calib's schema (McCalib.cpp:2278):
+    ``nb_camera_group`` then per ``camera_group_<g>`` a ``frame_<idx>`` map holding, per
+    ``camera_<id>``, ``nb_pts`` and an ``error_list`` (1xN per-point pixel distances), plus a
+    ``camera_list`` per frame and a ``frame_list`` for the group."""
+    by_frame: Dict[int, List] = {}
+    for o in object_obs:
+        by_frame.setdefault(o.frame_id, []).append(o)
+    fs = cv2.FileStorage(str(path), cv2.FILE_STORAGE_WRITE)
+    fs.write("nb_camera_group", 1)
+    fs.startWriteStruct(f"camera_group_{cam_group}", cv2.FileNode_MAP)
+    frame_list = []
+    for fr in sorted(by_frame):
+        cam_list = []
+        fs.startWriteStruct(f"frame_{fr}", cv2.FileNode_MAP)
+        for o in by_frame[fr]:
+            rep = _obs_reprojection(rig, o)
+            if rep is None:
+                continue
+            uv_det, uv_rep, valid = rep
+            err = np.linalg.norm(uv_rep[valid] - uv_det[valid], axis=1)
+            cam_list.append(o.cam_id)
+            fs.startWriteStruct(f"camera_{o.cam_id}", cv2.FileNode_MAP)
+            fs.write("nb_pts", int(valid.sum()))
+            fs.write("error_list", err.reshape(1, -1).astype(np.float64))
+            fs.endWriteStruct()
+        fs.write("camera_list", np.asarray(cam_list, np.int32).reshape(-1, 1))
+        fs.endWriteStruct()
+        frame_list.append(fr)
+    fs.write("frame_list", np.asarray(frame_list, np.int32).reshape(-1, 1))
+    fs.endWriteStruct()
+    fs.release()
+
+
+def save_reprojection_images(rig, object_obs, image_root: str, save_dir: str, *,
+                             cam_prefix: str = "Cam_", ext: str = "png") -> int:
+    """Draw detected (green) vs reprojected (red) corners per frame and save under
+    ``<save_dir>/Reprojection/<cam:03d>/<frame:06d>.jpg`` — the MC-Calib layout
+    (McCalib.cpp:1923). Images are looked up as ``<image_root>/<cam_prefix><cam+1:03d>/
+    <frame+1:05d>.<ext>``. Returns the number of images written (0 if no images found)."""
+    root = os.path.join(save_dir, "Reprojection")
+    written = 0
+    by_cf: Dict[Tuple[int, int], List] = {}
+    for o in object_obs:
+        by_cf.setdefault((o.cam_id, o.frame_id), []).append(o)
+    for (cam, fr), obs_list in by_cf.items():
+        img_path = None
+        for cand in (f"{fr + 1:05d}.{ext}", f"{fr:05d}.{ext}", f"{fr + 1:06d}.{ext}"):
+            p = os.path.join(image_root, f"{cam_prefix}{cam + 1:03d}", cand)
+            if os.path.exists(p):
+                img_path = p
+                break
+        if img_path is None:
+            continue
+        image = cv2.imread(img_path)
+        if image is None:
+            continue
+        for o in obs_list:
+            rep = _obs_reprojection(rig, o)
+            if rep is None:
+                continue
+            uv_det, uv_rep, valid = rep
+            for i in np.where(valid)[0]:
+                cv2.circle(image, (int(round(uv_rep[i, 0])), int(round(uv_rep[i, 1]))), 4,
+                           (0, 0, 255), cv2.FILLED, 8)
+                cv2.circle(image, (int(round(uv_det[i, 0])), int(round(uv_det[i, 1]))), 4,
+                           (0, 255, 0), cv2.FILLED, 8)
+        out_dir = os.path.join(root, f"{cam:03d}")
+        os.makedirs(out_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(out_dir, f"{fr:06d}.jpg"), image)
+        written += 1
+    return written
+
+
+def save_mccalib_results(rig, save_dir: str, *, object3d: Optional[Object3D] = None,
+                         object_obs=None, cam_groups: Optional[Dict[int, int]] = None,
+                         camera_params_file_name: str = "") -> Dict[str, str]:
+    """Write the full MC-Calib result set into ``save_dir`` and return the paths written.
+
+    Always writes ``calibrated_cameras_data.yml`` (or ``camera_params_file_name`` if given)
+    and ``calibrated_objects_pose_data.yml``; writes ``calibrated_objects_data.yml`` when an
+    ``Object3D`` is provided (or taken from ``rig.objects``).
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    cam_name = camera_params_file_name or "calibrated_cameras_data.yml"
+    paths = {"cameras": os.path.join(save_dir, cam_name),
+             "object_poses": os.path.join(save_dir, "calibrated_objects_pose_data.yml")}
+    save_mccalib_cameras(rig, paths["cameras"], cam_groups=cam_groups)
+    save_mccalib_object_poses(rig, paths["object_poses"])
+    obj = object3d if object3d is not None else next(iter(getattr(rig, "objects", {}).values()), None)
+    if obj is not None:
+        paths["objects"] = os.path.join(save_dir, "calibrated_objects_data.yml")
+        save_mccalib_objects(obj, paths["objects"])
+    if object_obs is not None:
+        paths["reprojection_error"] = os.path.join(save_dir, "reprojection_error_data.yml")
+        save_mccalib_reprojection_error(rig, object_obs, paths["reprojection_error"])
+    return paths
+
+
 def radtan_from_cameragt(cam: CameraGT) -> RadTanModel:
     """Build a DS-MSP ``RadTanModel`` from an MC-Calib camera (distortion_type 0)."""
     K = cam.K

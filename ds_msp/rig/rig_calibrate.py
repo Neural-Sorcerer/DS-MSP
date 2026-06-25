@@ -130,6 +130,11 @@ _NEUTRAL = {"alpha": 0.5, "xi": 0.0, "beta": 1.0, "k1": 0.0, "k2": 0.0, "k3": 0.
 def _seed_from_K(model_cls, K: np.ndarray) -> CameraModel:
     """Build a seed instance of ``model_cls`` from a pinhole ``K`` (focal + principal
     point) with neutral distortion — the from-scratch starting point for any model."""
+    if not set(model_cls.param_names) >= {"fx", "fy"}:
+        # Non-pinhole-parameterized model (e.g. OCam: cx,cy + projection polynomial). It
+        # has no fx/fy; seed cx,cy + a focal-scaled leading polynomial term and let
+        # `initialize_from_correspondences` fit the rest from rays.
+        return model_cls(K[0, 2], K[1, 2])
     vals = {"fx": K[0, 0], "fy": K[1, 1], "cx": K[0, 2], "cy": K[1, 2], **_NEUTRAL}
     vec = np.array([vals[n] for n in model_cls.param_names], float)
     return model_cls.from_params(vec)
@@ -145,6 +150,9 @@ def paraxial_focal(model: CameraModel) -> Tuple[float, float]:
     at the optical axis. Compare cameras (and seed focals) by this, never by raw ``fx``.
     """
     p = dict(zip(model.param_names, model.params))
+    if "fx" not in p or "fy" not in p:  # model without explicit fx/fy (e.g. OCam): use K
+        K = model.K
+        return float(K[0, 0]), float(K[1, 1])
     fx, fy = p["fx"], p["fy"]
     if "xi" in p:                       # Double Sphere: paraxial = fx / (1 + xi)
         s = 1.0 + p["xi"]
@@ -187,22 +195,42 @@ def _model_aware_seed(model_cls, Kp, ge6, obj) -> CameraModel:
     return seed, Xcal, uvcal
 
 
-def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1.0,
-                          max_nfev: int = 150):
-    """Build a model-agnostic front-end that calibrates each camera with ``model_cls``.
+def _resolve_model_map(model_spec, cam_ids) -> Dict[int, type]:
+    """Resolve ``model_spec`` to a ``{cam_id: model_cls}`` map.
 
-    Seeding is data-driven and model-independent: a pinhole+Brown pre-calibration
-    (``cv2.calibrateCamera``) gives a robust focal / principal-point seed (the same
-    initialization MC-Calib uses), then the DS-MSP single-camera bundle adjuster
-    (``calib.bundle.calibrate``) refines the *target model's* full parameter vector from
-    that seed. Avoiding a blind focal sweep matters for models whose distortion can absorb
-    a focal-seed error (e.g. KB), where an RMS-tie would otherwise pick a wrong-focal
-    basin. The rig pipeline downstream operates entirely in ``model_cls``. Returns a
-    callable with the ``front_end`` signature used by :func:`calibrate_rig`.
+    Accepts a single model class / name string (every camera uses it — the model-agnostic
+    case), or a dict ``{cam_id: class-or-name}`` to give each camera its **own** model, the
+    MC-Calib ``camera_models`` / ``distortion_per_camera`` behaviour (camera 0 can be DS,
+    camera 1 KB, ...). Name strings are resolved through :mod:`ds_msp.models.registry`, so
+    MC-Calib spellings (``double_sphere``) and DS-MSP spellings (``ds``) both work.
+    """
+    from ..models.registry import model_class
+    if isinstance(model_spec, dict):
+        return {c: (m if isinstance(m, type) else model_class(m))
+                for c, m in ((c, model_spec[c]) for c in cam_ids)}
+    cls = model_spec if isinstance(model_spec, type) else model_class(model_spec)
+    return {c: cls for c in cam_ids}
+
+
+def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 1.0,
+                          max_nfev: int = 150):
+    """Build a front-end that calibrates each camera with its chosen model.
+
+    ``model_spec`` is either one model (class or name) used for **every** camera, or a
+    ``{cam_id: model}`` map giving each camera its own model — the MC-Calib per-camera
+    ``camera_models`` behaviour (camera 0 → DS, camera 1 → KB, ...). Seeding is data-driven
+    and model-independent: a from-scratch robust pinhole pre-calibration (RANSAC DLT) gives
+    a focal / principal-point seed, then the DS-MSP single-camera bundle adjuster
+    (``calib.bundle.calibrate``) refines the *chosen model's* full parameter vector from
+    that seed. Avoiding a blind focal sweep matters for models whose distortion can absorb a
+    focal-seed error (e.g. KB). Returns a callable with the ``front_end`` signature used by
+    :func:`calibrate_rig`.
     """
     def front_end(obj, obs_by_cam, img_size):
+        model_map = _resolve_model_map(model_spec, list(obs_by_cam))
         raw = {}
         for cam_id, obs in obs_by_cam.items():
+            model_cls = model_map[cam_id]
             w, h = img_size[cam_id]
             ge6 = [o for o in obs if len(o.point_rows) >= 6]   # views usable for intrinsics
             objpts = [obj.pts_3d[o.point_rows].astype(np.float32) for o in ge6]
@@ -225,7 +253,7 @@ def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1
                 model = min(cands, key=lambda r: r["rms_px"])["model"]
             else:
                 model = seed_ma
-            raw[cam_id] = dict(model=model, obs=obs)
+            raw[cam_id] = dict(model=model, obs=obs, cls=model_cls)
 
         # Consensus guard: a camera that views the target near-planar (e.g. an obliquely
         # angled camera seeing one board) hits the focal ambiguity and calibrates to a wrong
@@ -244,7 +272,7 @@ def make_bundle_front_end(model_cls, *, loss: str = "cauchy", f_scale: float = 1
                                    or abs(fy - med_fy) > 0.25 * med_fy)):
                 w, h = img_size[cam_id]
                 Kc = np.array([[med_fx, 0, w / 2.0], [0, med_fy, h / 2.0], [0, 0, 1.0]])
-                model = _seed_from_K(model_cls, Kc)
+                model = _seed_from_K(r["cls"], Kc)
             else:
                 model = r["model"]
             cameras[cam_id] = model

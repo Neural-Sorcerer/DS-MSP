@@ -1,0 +1,126 @@
+"""Drive the rig calibration on a real MC-Calib dataset, MC-Calib style.
+
+This is the orchestration MC-Calib's ``apps/calibrate`` performs, in DS-MSP terms:
+choose a model per camera (the ``camera_models`` config field), optionally optimize
+extrinsics-only or intrinsics+extrinsics (``fix_intrinsic``), then write the result in
+MC-Calib's exact OpenCV-YAML format. Used by ``scripts/calibrate_rig.py`` and the
+cross-dataset validation.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List, Optional
+
+import numpy as np
+
+from ..io.mccalib import Scenario, save_mccalib_results, save_reprojection_images
+from ..models.registry import (FISHEYE_MODELS, PINHOLE_MODELS, canonical_name,
+                               model_class)
+from . import ba
+from .rig_calibrate import _gated_pnp, calibrate_rig, make_bundle_front_end
+from .types import RigState
+
+
+def random_model_assignment(cam_ids: List[int], *, kind: str = "pinhole",
+                            seed: int = 0, allowed=None) -> Dict[int, str]:
+    """Assign each camera a random *valid* model name.
+
+    ``kind="pinhole"`` draws from {radtan, ucm, eucm, ds, ocam} (KB excluded — it is
+    fisheye-only); ``kind="fisheye"`` from {kb, ucm, eucm, ds, ocam} (RadTan excluded — it
+    cannot represent a fisheye). The sphere/polynomial models handle both. Pass ``allowed``
+    to restrict the pool.
+    """
+    pool = list(allowed) if allowed is not None else list(
+        PINHOLE_MODELS if kind == "pinhole" else FISHEYE_MODELS)
+    rng = np.random.default_rng(seed)
+    return {c: str(rng.choice(pool)) for c in sorted(cam_ids)}
+
+
+def make_fixed_intrinsic_front_end(cameras: Dict[int, object]):
+    """Front-end for ``fix_intrinsic=1``: use the *given* per-camera intrinsics and only
+    estimate per-frame object poses (robust gated PnP). No intrinsic calibration — the
+    global BA then refines extrinsics with these intrinsics held fixed, mirroring MC-Calib's
+    fixed-intrinsic mode (which needs initial intrinsics and never refines them)."""
+    def front_end(obj, obs_by_cam, img_size):
+        for cam_id, obs in obs_by_cam.items():
+            model = cameras[cam_id]
+            for o in obs:
+                o.T_c_o = _gated_pnp(model, obj.pts_3d[o.point_rows], o.pts_2d)
+        return {c: cameras[c] for c in obs_by_cam}
+    return front_end
+
+
+def calibrate_scenario(scn: Scenario, model_spec, *, fix_intrinsics: bool = False,
+                       init_cameras: Optional[Dict[int, object]] = None,
+                       save_dir: Optional[str] = None,
+                       camera_params_file_name: str = "",
+                       image_root: Optional[str] = None,
+                       cam_prefix: str = "Cam_") -> Dict:
+    """Calibrate one loaded :class:`Scenario` and (optionally) write MC-Calib output.
+
+    ``model_spec`` is a single model or a ``{cam_id: model}`` map (names or classes).
+    ``fix_intrinsics=True`` requires ``init_cameras`` (per-camera models with the intrinsics
+    to hold fixed) and optimizes extrinsics only. When ``image_root`` is given, MC-Calib-style
+    reprojection overlay images are written too. Returns ``{rig, models, paths, metrics}``.
+    """
+    if fix_intrinsics:
+        if init_cameras is None:
+            raise ValueError("fix_intrinsics=True needs init_cameras (initial intrinsics)")
+        front_end = make_fixed_intrinsic_front_end(init_cameras)
+    else:
+        front_end = make_bundle_front_end(model_spec)
+    rig = calibrate_rig(scn.object, scn.object_obs, scn.img_size,
+                        fix_intrinsics=fix_intrinsics, front_end=front_end)
+    rig.objects = {scn.object.object_id: scn.object}
+
+    paths = {}
+    if save_dir is not None:
+        paths = save_mccalib_results(rig, save_dir, object3d=scn.object,
+                                     object_obs=scn.object_obs,
+                                     camera_params_file_name=camera_params_file_name)
+        if image_root is not None:
+            n = save_reprojection_images(rig, scn.object_obs, image_root, save_dir,
+                                         cam_prefix=cam_prefix)
+            paths["reprojection_images"] = f"Reprojection/ ({n} images)"
+    metrics = _scenario_metrics(rig, scn)
+    return {"rig": rig, "models": {c: rig.cameras[c].name for c in rig.cameras},
+            "paths": paths, "metrics": metrics}
+
+
+def _rel(Tref, Ti):
+    return Ti @ np.linalg.inv(Tref)
+
+
+def _scenario_metrics(rig: RigState, scn: Scenario) -> Dict:
+    """Reprojection RMS per camera + worst inter-camera baseline error vs GT / MC-Calib.
+
+    GT/MC-Calib store camera->world poses; ``rig.T_c_g`` is world->camera, so invert before
+    comparing baselines."""
+    rms = ba.reprojection_rms(rig, scn.object_obs)
+    ref = rig.ref_cam_id
+
+    def worst_baseline(ref_poses: Dict[int, np.ndarray], invert: bool) -> Optional[float]:
+        common = [c for c in rig.T_c_g if c in ref_poses and c != ref] if ref in ref_poses else []
+        if not common:
+            return None
+        out = 0.0
+        for c in common:
+            mine = _rel(rig.T_c_g[ref], rig.T_c_g[c])
+            R = ref_poses
+            other = _rel(R[ref], R[c]) if not invert else _rel(np.linalg.inv(R[ref]),
+                                                               np.linalg.inv(R[c]))
+            b_mine = np.linalg.norm(mine[:3, 3])
+            b_other = np.linalg.norm(other[:3, 3])
+            if b_other > 1e-9:
+                out = max(out, abs(b_mine - b_other) / b_other)
+        return 100.0 * out
+
+    gt_poses = {c: g.pose for c, g in scn.gt.items()} if scn.gt else {}
+    mc_poses = {c: m.pose for c, m in scn.mccalib.items()} if scn.mccalib else {}
+    return {
+        "rms_px": {c: float(rms[c]) for c in rms},
+        "max_rms_px": float(max(rms.values())) if rms else float("nan"),
+        # GT P_i is camera->world; T_c_g is world->camera -> invert to compare baselines.
+        "worst_baseline_pct_vs_gt": worst_baseline(gt_poses, invert=True),
+        "worst_baseline_pct_vs_mccalib": worst_baseline(mc_poses, invert=True),
+    }
