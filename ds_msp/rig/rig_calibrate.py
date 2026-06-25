@@ -21,7 +21,8 @@ from ..core.contracts import CameraModel
 from ..models.radtan import RadTanModel
 from . import ba
 from .extrinsics import init_camera_groups
-from .pose_init import average_object_pose_in_group, estimate_pose_ransac
+from .pose_init import (average_object_pose_in_group, estimate_pose_ransac,
+                        robust_pose_irls)
 from .types import Object3D, ObjectObs, RigState
 
 
@@ -285,24 +286,18 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
 
 
 def _gated_pnp(model, X, uv, max_rms_px: float = 2.0):
-    """Robust PnP whose result is accepted only if it reprojects well — a bad pose from a
-    hard partial view is dropped (returns ``None``) rather than poisoning the graph.
+    """Per-view pose by **robust reweighting, not rejection** (the down-weight-don't-drop
+    philosophy the user asked for, matching the global BA and diffpnp's robust PnP).
 
-    The acceptance RMS is measured over the RANSAC **inlier** set, not all points: with
-    gross outliers present, a perfectly good pose still reprojects the blunders at tens of
-    pixels, so an all-points RMS would spuriously reject every outlier-bearing view and
-    starve the extrinsics graph. Gating on the inliers keeps the good poses while still
-    dropping genuinely bad ones (whose inlier set itself reprojects poorly)."""
-    T, inl = estimate_pose_ransac(model, X, uv)
-    if T is None or inl.sum() < 4:
-        return None
-    Xc = (T[:3, :3] @ X[inl].T).T + T[:3, 3]
-    proj, valid = model.project(Xc)
-    if valid.sum() < 4:
-        return None
-    d = proj[valid] - uv[inl][valid]
-    rms = float(np.sqrt((d * d).sum() / valid.sum()))
-    return T if rms < max_rms_px else None
+    A RANSAC P3P warm-start seeds a redescending IRLS refinement over *every* corner
+    (:func:`pose_init.robust_pose_irls`): gross outliers get a vanishing weight instead of
+    being discarded, so a partly-corrupted view still contributes its good corners to the
+    extrinsics graph rather than being thrown away. Returns ``None`` only when the view has
+    too few unprojectable points to define any pose (insufficient data, MC-Calib's <4 rule)
+    — not as outlier rejection. ``max_rms_px`` is accepted for signature compatibility and
+    no longer gates the result."""
+    return robust_pose_irls(model, X, uv, kernel="cauchy", gnc_iters=5, gnc_start=4.0,
+                            studentize=True)
 
 
 def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],

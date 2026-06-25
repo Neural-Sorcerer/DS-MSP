@@ -15,12 +15,97 @@ import cv2
 import numpy as np
 
 from ..core.contracts import CameraModel
+from ..core.lie import hat, se3_exp
+from ..core.robust import auto_kernel_scale, gnc_scale, robust_weight, studentized_sq
 from .averaging import average_rotation
 
 
 def _focal(model: CameraModel) -> float:
     K = model.K
     return 0.5 * (abs(K[0, 0]) + abs(K[1, 1]))
+
+
+def robust_pose_irls(
+    model: CameraModel,
+    object_pts: np.ndarray,
+    image_pts: np.ndarray,
+    T0: Optional[np.ndarray] = None,
+    *,
+    kernel: str = "cauchy",
+    max_iter: int = 15,
+    gnc_iters: int = 5,
+    gnc_start: float = 4.0,
+    studentize: bool = True,
+    seed: int = 0,
+) -> Optional[np.ndarray]:
+    """Refine a single-view pose by IRLS on the normalized plane — **keeps every point**.
+
+    Outliers are down-weighted by a redescending kernel (``cauchy`` by default) with a
+    MAD-auto scale and a short graduated-non-convexity anneal, not rejected: the answer
+    uses all correspondences, mirroring the down-weight-don't-drop philosophy of the global
+    BA (and diffpnp's robust PnP). ``studentize=True`` additionally inflates the residual of
+    high-leverage points (the self-masking outliers a residual kernel cannot see).
+
+    Returns the refined ``T_cam_obj`` (4x4), or ``None`` only when the view has too few
+    unprojectable points to define a pose at all (insufficient data, not outlier rejection).
+    The pose is warm-started from RANSAC P3P when ``T0`` is not given.
+    """
+    X = np.asarray(object_pts, float)
+    uv = np.asarray(image_pts, float)
+    rays, ok = model.unproject(uv)
+    ok = ok & (rays[:, 2] > 1e-6)
+    if ok.sum() < 4:
+        return None
+    idx = np.where(ok)[0]
+    Xv = X[idx]
+    pn = rays[idx, :2] / rays[idx, 2:3]                  # normalized observations
+    foc = _focal(model)
+
+    if T0 is None:                                       # RANSAC P3P warm-start (init only)
+        T0, _ = estimate_pose_ransac(model, X, uv, seed=seed)
+    T = np.eye(4) if T0 is None else T0.copy()
+
+    n = len(Xv)
+    for it in range(max_iter):
+        Pc = (T[:3, :3] @ Xv.T).T + T[:3, 3]             # (n,3) camera-frame points
+        Z = Pc[:, 2]
+        good = Z > 1e-6
+        if good.sum() < 4:
+            break
+        proj = Pc[:, :2] / Z[:, None]
+        e = (proj - pn) * foc                            # residual in pixels (n,2)
+        # 2x6 Jacobian per point on the normalized plane, scaled to pixels.
+        J = np.zeros((n, 2, 6))
+        invZ = np.where(good, 1.0 / Z, 0.0)
+        Jp = np.zeros((n, 2, 3))
+        Jp[:, 0, 0] = invZ; Jp[:, 0, 2] = -Pc[:, 0] * invZ * invZ
+        Jp[:, 1, 1] = invZ; Jp[:, 1, 2] = -Pc[:, 1] * invZ * invZ
+        for i in range(n):                               # [I | -hat(P)] left perturbation
+            Gi = np.hstack([np.eye(3), -hat(Pc[i])])
+            J[i] = foc * Jp[i] @ Gi
+        e[~good] = 0.0; J[~good] = 0.0
+
+        s = np.einsum("nk,nk->n", e, e)                  # squared residual per point (px^2)
+        Jflat = J.reshape(2 * n, 6)
+        if studentize and good.sum() > 8:
+            s = studentized_sq(Jflat, e.reshape(-1), block=2)
+        scale = auto_kernel_scale(np.sqrt(np.maximum(s, 0.0)), kernel)
+        if gnc_iters > 0:
+            scale = gnc_scale(it, gnc_iters, gnc_start * scale, scale)
+        w = robust_weight(s, kernel, scale)              # per-point IRLS weight (n,)
+        w[~good] = 0.0
+
+        W = np.repeat(w, 2)
+        H = Jflat.T @ (W[:, None] * Jflat) + 1e-9 * np.eye(6)
+        g = Jflat.T @ (W * e.reshape(-1))
+        try:
+            delta = -np.linalg.solve(H, g)
+        except np.linalg.LinAlgError:
+            break
+        T = se3_exp(delta) @ T
+        if np.linalg.norm(delta) < 1e-9:
+            break
+    return T
 
 
 def estimate_pose_ransac(
