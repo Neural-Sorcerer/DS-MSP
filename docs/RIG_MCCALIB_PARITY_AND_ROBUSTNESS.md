@@ -116,12 +116,28 @@ same frame have `T_c_b` in different camera frames, so `inv(T_c_b2)·T_c_b1` wou
 `he_approach` (0 = bootstrap Tsai, 1 = traditional single Tsai) is now consumed end-to-end
 (`config → calibrate_scenario → calibrate_rig → link_groups`).
 
-**Validation (real data, Scenario_1 — a 3-board object, 2 cameras).** Reconstructing the
-fused object from the detected keypoints alone (no pre-built object) recovers MC-Calib's
-object geometry to **0.058 mm RMS over a 2.83 m extent** (2·10⁻⁵ relative). The full
-config-driven pipeline through that reconstructed object gives **0.013 % inter-camera
-baseline error and 0.009° rotation error vs ground truth** (0.086 px reprojection RMS) —
-matching the pre-built-object path. Synthetic regression in `tests/rig/test_reconstruct.py`.
+**Validation (real data).** *Scenario_1* (3-board, 2 cameras): reconstructing the fused
+object from detected keypoints alone (no pre-built object) recovers MC-Calib's object geometry
+to **0.058 mm RMS over a 2.83 m extent** (2·10⁻⁵ relative); the full config-driven pipeline
+through it gives **0.013 % inter-camera baseline error and 0.009° rotation vs ground truth**
+(0.086 px RMS) — matching the pre-built-object path. *Scenario_5* (6-board, **4 cameras, a
+different model per camera** — cam0 radtan / cam1 ucm / cam2 eucm / cam3 ds): end-to-end from
+the keypoints, all 6 boards fuse (96 points) and the heterogeneous rig calibrates to **0.006 %
+worst baseline error and ≤0.037° rotation vs GT**; straight from **raw images** (detection
+included) it fuses the 4 well-detected boards and still reaches **0.041 % / ≤0.21°**. Synthetic
+regression in `tests/rig/test_reconstruct.py`.
+
+**Scope of the reconstruction (honest caveat).** Board fusion is by *within-image*
+covisibility — two boards are related only when one image (same camera + frame) sees both, so
+the boards must form a connected covisibility graph. This holds for a roughly-planar / open
+multi-board target (Scenario_1, Scenario_5) where each camera sees overlapping boards. It does
+**not** hold for a *closed cube-like* target where each camera sees a disjoint board subset and
+no image ever shows two faces together — e.g. Scenario_3, where cam0→{0,2}, cam1→{1,5},
+cam2→{3,4}, cam3→{6,7} give four disconnected board components. Fusing those requires relating
+faces through the **camera-group extrinsics** (MC-Calib's cross-group object merge,
+`merge3DObjects` / `computeObjectsPairPose`, McCalib.cpp:1680-1890), which is **not yet
+implemented** — for such targets supply the pre-built object (`object_path`). This is the next
+reconstruction gap and is logged in `RIG_30_30_30_IMPROVEMENT_PLAN.md`.
 
 ### Parity matrix (final)
 
@@ -129,7 +145,8 @@ matching the pre-built-object path. Synthetic regression in `tests/rig/test_reco
 |---|---|---|
 | Raw images + single `calib_param.yml` | ✅ | `--config`, every MC-Calib key + per-camera `camera_models` |
 | Single-board object | ✅ | built from config |
-| **Multi-board fused-object reconstruction** | ✅ **(new)** | `rig/reconstruct.py`; 0.058 mm vs MC-Calib object |
+| **Multi-board fused-object reconstruction** (within-image covisibility) | ✅ **(new)** | `rig/reconstruct.py`; Scenario_1 0.058 mm vs MC-Calib object, Scenario_5 6 boards / 4 heterogeneous cams 0.006 % vs GT |
+| Cross-group object merge for cube-like targets (`merge3DObjects`) | ◻️ future | needed only when cameras see disjoint board subsets (Scenario_3); supply pre-built object meanwhile |
 | Per-camera heterogeneous models | ✅ (exceeds) | radtan/ucm/eucm/ds/kb/ocam per camera |
 | Overlapping camera groups | ✅ | covisibility graph + shortest-path compose |
 | Disjoint groups via hand-eye | ✅ | Tsai–Lenz; `he_approach` 0/1 selectable |
