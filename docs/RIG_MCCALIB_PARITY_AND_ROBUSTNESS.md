@@ -57,6 +57,41 @@ pose initialization.
   ≥50 % number. Table in `docs/RIG_OUTLIER_BENCHMARK.md`.
 - **D** Ease-of-use metric, docs, full validation, commit.
 
+## Results
+
+**Parity (raw images + one config).** Scenario_2 (`Main_5_cameras_NonGloballyOverlap`, 5
+cameras, single board) calibrates end-to-end *from raw images* — ChArUco detected by
+`ds_msp.calib.charuco` (corner-for-corner match to MC-Calib's own keypoints: median
+0.0019 px, max 0.023 px) — to **0.029 %** worst baseline error vs ground truth. A different
+model per camera (radtan/ucm/eucm/ds across the 5) gives 0.024 %. The full 5-dataset
+evaluation is unchanged after the robustness work: **extrinsics ≤0.152 % of GT, intrinsics
+≤0.212 % of MC-Calib** (`docs/RIG_EVALUATION_TABLE.md`).
+
+**Ease of use (≥50 %).** Going from a folder of images to calibrated output:
+
+| | before | after |
+|---|---|---|
+| Raw-image workflow | not supported (needed MC-Calib to detect keypoints first) | `--config calib_param.yml` |
+| User-written code | ~10 lines of Python (`load_scenario` → model dict → `calibrate_scenario` → save) | **0** |
+| Commands / external deps | run MC-Calib **+** a Python script | one command, no MC-Calib |
+
+```bash
+# the whole calibration, MC-Calib-style:
+python scripts/calibrate_rig.py --config calib_param.yml
+```
+
+That is MC-Calib's exact one-config-one-command UX (and the previously *impossible*
+raw-image-only path), a >50 % cut in user steps and code by any count.
+
+**Outlier handling (>50 %, by weighting not rejection).** `docs/RIG_OUTLIER_BENCHMARK.md`:
+per-view pose under gross-corner contamination — naive L2 diverges (164–177° past 10 %
+outliers) while the robust reweighting front-end stays sub-0.1° (**~100 % error reduction**)
+and matches hard rejection *while keeping every corner*. Studentized leverage recovers a
+self-masking high-leverage outlier a residual-only kernel cannot see: **0.82° → 0.16 °
+(80 % lower)**. Hard rejection (`_gated_pnp`'s drop-the-view gate) is replaced by
+`robust_pose_irls` (RANSAC warm-start + redescending Cauchy IRLS, MAD auto-scale, GNC,
+studentized leverage) — no view is discarded, every corner is weighted.
+
 ## diffpnp ↔ MC-Calib relationship
 
 `diffpnp` is a differentiable, batched, robust PnP `nn.Module` (PyTorch). MC-Calib /
