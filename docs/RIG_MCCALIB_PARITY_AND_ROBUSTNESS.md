@@ -140,6 +140,13 @@ matching the pre-built-object path. Synthetic regression in `tests/rig/test_reco
 | `ransac_threshold`, `number_iterations` config knobs | ⚖️ superseded | parsed; DS-MSP auto-tunes the RANSAC scale (κ-Rayleigh MAD) and BA iteration budget, so these tuning knobs are intentionally not hard-wired — see the improvement report |
 | Board-structure refinement in BA (`refineObject`) | ◻️ future | inter-board `T_co_b` currently frozen post-reconstruction; see 30/30/30 report (accuracy) |
 
+The forward plan to go *beyond* parity — 30 % faster / more accurate / more robust, with
+measured baselines and an implementation sequence — is in
+[`RIG_30_30_30_IMPROVEMENT_PLAN.md`](RIG_30_30_30_IMPROVEMENT_PLAN.md). Two of its robustness
+levers shipped alongside this parity work: the robust front-end is now `calibrate_rig`'s
+default (was a fragile L2 path) and a focal-collapse anchor was added — together turning an
+8/8-seed divergence at 15 % gross outliers into 0/8 (median 0.92 % extrinsic error).
+
 ## diffpnp ↔ MC-Calib relationship
 
 `diffpnp` is a differentiable, batched, robust PnP `nn.Module` (PyTorch). MC-Calib /
