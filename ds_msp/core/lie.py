@@ -29,6 +29,19 @@ def vee(W: np.ndarray) -> np.ndarray:
     return np.array([W[2, 1], W[0, 2], W[1, 0]])
 
 
+def hat_batch(V: np.ndarray) -> np.ndarray:
+    """Batched :func:`hat`: stack of axis-angle vectors ``(N, 3)`` → skew matrices ``(N, 3, 3)``.
+
+    The vectorized form used to build per-point extrinsic Jacobians (``∂Xc/∂δω = -R[Xw]_×``)
+    in bundle adjustment — one shared implementation for ``geometry`` and ``rig``."""
+    V = np.asarray(V, float)
+    K = np.zeros((V.shape[0], 3, 3))
+    K[:, 0, 1], K[:, 0, 2] = -V[:, 2], V[:, 1]
+    K[:, 1, 0], K[:, 1, 2] = V[:, 2], -V[:, 0]
+    K[:, 2, 0], K[:, 2, 1] = -V[:, 1], V[:, 0]
+    return K
+
+
 def so3_exp(w: np.ndarray) -> np.ndarray:
     """Exp map ``ℝ³ → SO(3)`` (Rodrigues), numerically safe at ``θ = 0``."""
     w = np.asarray(w, float)

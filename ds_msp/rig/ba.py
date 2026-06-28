@@ -20,7 +20,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from ..calib.bundle import _skew_batch
+from ..core.lie import hat_batch as _skew_batch
 from ..core.lie import so3_exp
 from ..core.optimize import lm_solve, schur_lm
 from .types import ObjectObs, RigState

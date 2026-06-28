@@ -6,8 +6,9 @@ the model type), jointly refines intrinsics and per-image extrinsics by
 Levenberg-Marquardt using the model's **analytic** projection Jacobian (no
 autodiff). Works for DS/UCM/EUCM/KB/RadTan or any ``CameraModel``.
 
-Decoupled: imports only the contract + SciPy/OpenCV; the model type comes from
-the injected ``init_model`` (no concrete-model import).
+The model-agnostic BA loop lives in :mod:`ds_msp.geometry.calibrate_core`; this module
+adds pose seeding and result formatting. The model type comes from the injected
+``init_model`` (no concrete-model import).
 """
 
 from __future__ import annotations
@@ -18,23 +19,13 @@ import cv2
 import numpy as np
 
 from ..core.contracts import CameraModel
-from ..core.lie import so3_exp
-from ..core.optimize import schur_lm
+from ..geometry.calibrate_core import bundle_adjust
 
 #: Map the historical SciPy ``loss`` names to the in-house IRLS kernels.
 _LOSS_TO_KERNEL = {
     "linear": "none", "huber": "huber", "cauchy": "cauchy",
     "soft_l1": "pseudo_huber",
 }
-
-
-def _skew_batch(V: np.ndarray) -> np.ndarray:
-    """Stack of skew-symmetric matrices ``[Vₙ]_×``, shape ``(N, 3, 3)``."""
-    K = np.zeros((V.shape[0], 3, 3))
-    K[:, 0, 1], K[:, 0, 2] = -V[:, 2], V[:, 1]
-    K[:, 1, 0], K[:, 1, 2] = V[:, 2], -V[:, 0]
-    K[:, 2, 0], K[:, 2, 1] = -V[:, 1], V[:, 0]
-    return K
 
 
 def _seed_poses(init_model, X_world_list, keypoints_list, visibility_list):
@@ -81,81 +72,18 @@ def calibrate(init_model: CameraModel,
     valid observations (independent of ``loss``, so it stays comparable across kernels).
     """
     cls = type(init_model)
-    P = len(cls.param_names)
     n_img = len(X_world_list)
-    sizes = [len(X) for X in X_world_list]
-    total = 2 * sum(sizes)
     masks = [np.asarray(v, bool) for v in visibility_list]
-    lb_i, ub_i = cls.param_bounds()
 
     rvecs, tvecs = _seed_poses(init_model, X_world_list, keypoints_list, visibility_list)
-    # Manifold state: each seed rotation is kept as a *base matrix* re-based every accepted step by
-    # the solver (R ← R·exp([δω]_×), δω reset to 0). Because δω is always linearized at 0 the
-    # retraction Jacobian J_r(0) = I drops out — the extrinsics Jacobian is the cheap -R[Xw]_×, and
-    # δω never drifts toward the ‖r‖=π singularity. This is exactly what a black-box scipy solve
-    # (fixed base for the whole solve) cannot do, and why this path is both faster and stabler.
     R0 = np.stack([cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs])   # (n,3,3)
     t0 = np.stack([np.asarray(t, float) for t in tvecs])                     # (n,3)
-    state0 = (np.clip(init_model.params, lb_i, ub_i).copy(), R0, t0)
-
-    def residual(state):
-        params, Rb, t = state
-        m = cls.from_params(params)
-        out = np.zeros((total,))
-        row = 0
-        for i, (Xw, uv) in enumerate(zip(X_world_list, keypoints_list)):
-            N = sizes[i]
-            Xc = (Rb[i] @ Xw.T).T + t[i]
-            uvp, valid = m.project(Xc)
-            mask = masks[i] & valid
-            diff = np.zeros_like(uv, dtype=np.float64)
-            diff[mask] = uvp[mask] - uv[mask]
-            out[row:row + 2 * N] = diff.ravel()
-            row += 2 * N
-        return out
-
-    def linearize(state):
-        """Per-image residual + split Jacobian (shared intrinsics A_i, local pose B_i).
-
-        Feeding the blocks separately lets the solver Schur-complement out the (block-
-        diagonal) per-image poses, so the work scales linearly in image count rather
-        than cubically in the full ``P + 6·n_img`` dimension.
-        """
-        params, Rb, t = state
-        m = cls.from_params(params)
-        r_list, A_list, B_list = [], [], []
-        for i, (Xw, uv) in enumerate(zip(X_world_list, keypoints_list)):
-            N = sizes[i]
-            Xc = (Rb[i] @ Xw.T).T + t[i]
-            uvp, J_point, J_param, valid = m.project_jacobian(Xc)
-            mask = (masks[i] & valid)
-            r_i = np.zeros((N, 2))
-            r_i[mask] = uvp[mask] - uv[mask]
-            mask3 = mask[:, None, None].astype(np.float64)
-            # δω linearized at 0 ⇒ J_r = I, so ∂Xc/∂δω = -R[Xw]_×; ∂Xc/∂δt = I.
-            dXc_dw = -np.einsum('ij,njk->nik', Rb[i], _skew_batch(Xw))
-            J_rvec = np.einsum('nij,njc->nic', J_point, dXc_dw)
-            J_ext = np.concatenate([J_rvec, J_point], axis=-1) * mask3
-            r_list.append(r_i.ravel())
-            A_list.append((J_param * mask3).reshape(2 * N, P))
-            B_list.append(J_ext.reshape(2 * N, 6))
-        return r_list, A_list, B_list
-
-    def retract(state, d_shared, d_local):
-        params, Rb, t = state
-        params = np.clip(params + d_shared, lb_i, ub_i)          # keep intrinsics valid
-        Rb, t = Rb.copy(), t.copy()
-        for i in range(n_img):
-            Rb[i] = Rb[i] @ so3_exp(d_local[i, :3])
-            t[i] = t[i] + d_local[i, 3:]
-        return (params, Rb, t)
 
     kernel = _LOSS_TO_KERNEL.get(loss, loss)
-    out = schur_lm(state0, residual, linearize, retract,
-                   n_groups=n_img, shared_dim=P, local_dim=6, block=2,
-                   max_iter=max_nfev, robust_kernel=kernel,
-                   robust_scale=(f_scale if kernel != "none" else 1.0))
-    params, Rb, t = out.state
+    params, Rb, t, out = bundle_adjust(
+        cls, init_model.params, R0, t0,
+        X_world_list, keypoints_list, visibility_list,
+        kernel=kernel, scale=(f_scale if kernel != "none" else 1.0), max_iter=max_nfev)
     model = cls.from_params(params)
 
     # Return absolute (rvec, tvec) per image so downstream code (cv2.Rodrigues) is unaffected.
