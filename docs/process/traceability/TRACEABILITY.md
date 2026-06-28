@@ -7,7 +7,7 @@ CI fails if this file is out of sync with the registry and the test suite.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | FR-ADAPT-001 | FR | ADAPT | ARC-ADAPT | `ds_msp/adapt/convert.py` | `tests/adapt/test_convert.py` | implemented | no | tests/adapt/test_convert.py (module) |
 | FR-ADAPT-002 | FR | ADAPT | ARC-ADAPT | `ds_msp/adapt/autoselect.py` | `tests/adapt/test_autoselect.py` | implemented | no | tests/adapt/test_autoselect.py (module) |
-| FR-CALIB-001 | FR | CALIB | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/calib/test_generic_calibrate.py` | implemented | yes | tests/calib/test_generic_calibrate.py (module)<br>tests/calib/test_robust_calibrate.py (module) |
+| FR-CALIB-001 | FR | CALIB | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/calib/test_generic_calibrate.py` | implemented | yes | tests/calib/test_generic_calibrate.py (module)<br>tests/calib/test_robust_calibrate.py (module)<br>tests/realdata/test_mccalib_calibration.py (module) |
 | FR-CALIB-002 | FR | CALIB | ARC-GEOMETRY | `ds_msp/geometry/resection.py` | `tests/calib/test_robust_init.py` | implemented | no | tests/calib/test_robust_init.py (module) |
 | FR-CALIB-003 | FR | CALIB | ARC-CALIB | `ds_msp/calib/stereo.py` | `tests/calib/test_stereo.py` | implemented | no | tests/calib/test_stereo.py (module) |
 | FR-CALIB-004 | FR | CALIB | ARC-DETECT | `ds_msp/detect` | `tests/calib/test_charuco.py` | implemented | no | tests/calib/test_charuco.py (module) |
@@ -39,7 +39,7 @@ CI fails if this file is out of sync with the registry and the test suite.
 | NFR-NUM-001 | NFR | NUM | ARC-MODELS | `ds_msp/models` | `tests/contract/test_gradcheck.py` | implemented | no | tests/contract/test_gradcheck.py (module) |
 | NFR-NUM-002 | NFR | NUM | ARC-MODELS | `ds_msp/models` | `tests/test_ds_camera_cv.py` | implemented | no | tests/test_ds_camera_cv.py (module) |
 | NFR-NUM-003 | NFR | NUM | ARC-OPS | `ds_msp/ops/reproject.py` | `tests/ops/test_reproject.py` | implemented | no | tests/ops/test_reproject.py (module) |
-| NFR-NUM-004 | NFR | NUM | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/realdata/test_tumvi_calibration.py` | planned | yes | — |
+| NFR-NUM-004 | NFR | NUM | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/realdata/test_mccalib_calibration.py` | implemented | yes | tests/realdata/test_mccalib_calibration.py (module) |
 | NFR-NUM-005 | NFR | NUM | ARC-MODELS | `ds_msp/models/double_sphere.py` | `tests/models/test_ds_model.py` | implemented | no | tests/models/test_ds_model.py (module) |
 | NFR-NUM-006 | NFR | NUM | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/calib/test_robust_calibrate.py` | implemented | no | tests/calib/test_robust_calibrate.py (module) |
 | NFR-PORT-001 | NFR | PORT | ARC-CORE | `ds_msp` | `.github/workflows/ci.yml` | implemented | no | — |
