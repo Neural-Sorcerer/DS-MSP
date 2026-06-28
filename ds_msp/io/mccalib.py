@@ -26,7 +26,7 @@ import cv2
 import numpy as np
 
 from ..models.radtan import RadTanModel
-from ..rig.types import Object3D, ObjectObs
+from ..data.observations import Object3D, ObjectObs
 
 
 def _seq(node) -> list:

@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from ..rig.types import Object3D, ObjectObs
+from ..data.observations import Object3D, ObjectObs
 
 _DICT = cv2.aruco.DICT_6X6_1000
 
