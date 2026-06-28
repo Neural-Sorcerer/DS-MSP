@@ -54,6 +54,9 @@ exclude = ["ds_msp.rig", "ds_msp.rig.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the repo root on sys.path so cross-package test helpers (e.g. ``tests.rig._synth``)
+# import identically under CI's non-editable install and a local editable checkout.
+pythonpath = ["."]
 markers = [
     "jac: analytic-Jacobian gradient-check tests (run on every model PR)",
     "contract: model-agnostic contract suite",
