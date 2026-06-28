@@ -6,10 +6,7 @@ over many frames, fused into one consistent set of extrinsics + intrinsics.
 
 The math is **model-agnostic** — every routine composes poses and calls a
 ``CameraModel``'s ``project`` / ``unproject`` / ``project_jacobian``. So the entire
-pipeline works for any of DS-MSP's six models, exactly as it is in MC-Calib.
-
-See ``docs/RIG_CALIBRATION_PLAN.md`` (what/where) and
-``docs/RIG_CALIBRATION_IMPLEMENTATION.md`` (how) for the design.
+pipeline works for any of DS-MSP's camera models, exactly as it is in MC-Calib.
 """
 
 from __future__ import annotations

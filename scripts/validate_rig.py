@@ -84,6 +84,7 @@ def main(scn_dir):
 
 
 if __name__ == "__main__":
-    d = sys.argv[1] if len(sys.argv) > 1 else \
-        "/Users/munna/AI/3D/MC-Calib/Blender_Images/Scenario_1"
-    main(d)
+    if len(sys.argv) < 2:
+        print("usage: validate_rig.py <scenario_dir>", file=sys.stderr)
+        sys.exit(2)
+    main(sys.argv[1])

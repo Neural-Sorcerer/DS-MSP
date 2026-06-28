@@ -10,7 +10,7 @@ import pytest
 from ds_msp.io.mccalib import load_scenario
 from ds_msp.rig import calibrate_rig
 
-_ROOT = "/Users/munna/AI/3D/MC-Calib/Blender_Images"
+_ROOT = os.environ.get("DSMSP_BLENDER_ROOT", "")  # set locally; tests skip when unset/absent
 _SCENARIOS = ["Scenario_1", "Scenario_2", "Scenario_3", "Scenario_4", "Scenario_5"]
 
 

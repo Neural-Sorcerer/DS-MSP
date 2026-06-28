@@ -1,4 +1,4 @@
-"""Barron adaptive kernel identities + studentized-leverage unmasking (diffpnp port)."""
+"""Barron adaptive kernel identities + studentized-leverage unmasking."""
 import numpy as np
 
 from ds_msp.core.robust import (robust_cost, robust_weight, studentized_sq)

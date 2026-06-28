@@ -43,7 +43,7 @@ def robust_pose_irls(
     Outliers are down-weighted by a redescending kernel (``cauchy`` by default) with a
     MAD-auto scale and a short graduated-non-convexity anneal, not rejected: the answer
     uses all correspondences, mirroring the down-weight-don't-drop philosophy of the global
-    BA (and diffpnp's robust PnP). ``studentize=True`` additionally inflates the residual of
+    BA (and the robust PnP path). ``studentize=True`` additionally inflates the residual of
     high-leverage points (the self-masking outliers a residual kernel cannot see).
 
     Returns the refined ``T_cam_obj`` (4x4), or ``None`` only when the view has too few

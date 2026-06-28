@@ -388,8 +388,8 @@ def refine(rig: RigState, object_obs: List[ObjectObs], *,
     rk = dict(robust_kernel=robust_kernel, robust_scale=robust_scale,
               gnc_iters=gnc_iters, gnc_start=gnc_start)
     if residual_mode == "angular":
-        # The bearing (angular) residual is the model-agnostic, pinhole/fisheye-uniform error
-        # (Tier-1 C5): compare the predicted ray to the observed bearing in the tangent plane.
+        # The bearing (angular) residual is the model-agnostic, pinhole/fisheye-uniform error:
+        # compare the predicted ray to the observed bearing in the tangent plane.
         # Implemented on the dense analytic path with intrinsics held fixed (the observed bearing
         # is intrinsics-dependent), used as a geometry/structure polish.
         state0, residual, jacobian, retract, Kdim = build_problem(

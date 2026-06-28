@@ -13,7 +13,8 @@ coefficients (k1..k4); a model with fewer shape dof generically cannot reach tha
 point, so its *global* optimum carries a strictly positive residual (tens of
 pixels for a strongly-distorted lens). This is geometry of the model family, not
 conditioning or local minima — DS still ties KB sub-pixel on ordinary fisheyes,
-whose c5/c7 happen to be consistent with their c3 (i.e. they lie on the DS image).
+whose higher-order distortion terms happen to be consistent with the leading
+term (i.e. they lie on the DS image).
 
 ``convert_best`` makes "find an optimal solution in any scenario" concrete: it
 tries a capability-ordered ladder of target models and returns the **simplest one

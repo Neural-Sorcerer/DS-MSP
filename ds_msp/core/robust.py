@@ -126,7 +126,7 @@ def gnc_scale(iteration: int, gnc_iters: int,
 
 
 #: Floor on the ``(I − H_ii)`` eigenvalues — caps the studentization inflation of an
-#: extreme-leverage block at ``1/eps`` (default 20x), as in diffpnp's estimating module.
+#: extreme-leverage block at ``1/eps`` (default 20x), a standard robust-IRLS safeguard.
 STUDENT_EPS = 0.05
 
 

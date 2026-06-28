@@ -320,7 +320,7 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
 
 def _gated_pnp(model, X, uv, max_rms_px: float = 2.0):
     """Per-view pose by **robust reweighting, not rejection** (the down-weight-don't-drop
-    philosophy the user asked for, matching the global BA and diffpnp's robust PnP).
+    philosophy, matching the global BA and the robust PnP path).
 
     A RANSAC P3P warm-start seeds a redescending IRLS refinement over *every* corner
     (:func:`pose_init.robust_pose_irls`): gross outliers get a vanishing weight instead of
