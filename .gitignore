@@ -27,20 +27,14 @@ verification_output/
 datasets/*
 !datasets/README.md
 
-# Local-only working notes (kept out of the public repo).
-CAREER_ROADMAP.md
-
 # Local-only authoring/tooling config — never committed.
 .claude/
 .ai/
 CLAUDE.md
 CLAUDE.local.md
 
-# Internal R&D and planning docs (kept local, never published).
+# Internal R&D, planning, and working notes (kept local, never published).
 docs/research/
-docs/MULTI_MODEL_ADAPTER_PLAN.md
-docs/MULTI_MODEL_DEV_PROCESS.md
-docs/RIG_IMPROVEMENT_SURVEY.md
 
 # Local calibration datasets (large; downloaded/produced locally, never committed).
 2026_*_MC-Calib/
@@ -52,9 +46,7 @@ docs/RIG_IMPROVEMENT_SURVEY.md
 # Local detection/repro experiments (use datasets, not shipped).
 /experiments/
 
-# Internal calibration research reports (LOCAL-ONLY, never committed).
-# Contains proprietary third-party camera-rig calibration data (vendor models,
-# multi-sensor extrinsics) used to study model conversion. Keep out of GitHub.
+# Local-only data/output directories (never committed).
 /reports/
 # Scratch diagnostics dropped in the repo root during investigations.
 /diag_*.py
