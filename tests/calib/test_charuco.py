@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from ds_msp.calib.charuco import (BoardSpec, board_object_points, detect_image,
-                                  make_detectors, single_board_object)
+                                  single_board_object)
 
 SPEC = BoardSpec(n_x=5, n_y=5, length_square=0.04, length_marker=0.03, square_size=0.192)
 
@@ -32,7 +32,6 @@ def test_detect_rendered_board_recovers_all_corners():
     board = cv2.aruco.CharucoBoard((SPEC.n_x, SPEC.n_y), SPEC.length_square,
                                    SPEC.length_marker, dictionary)
     img = board.generateImage((1000, 1000), marginSize=40)
-    detectors = make_detectors([SPEC], legacy=False)   # match this board's pattern
     # the rendered board uses the non-legacy pattern, so detect with legacy=False
     det = cv2.aruco.CharucoDetector(board)
     ch_corners, ch_ids, _, _ = det.detectBoard(img)

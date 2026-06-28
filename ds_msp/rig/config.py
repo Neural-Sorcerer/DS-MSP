@@ -117,7 +117,8 @@ def _param_bounds(cls):
     lo, hi = [], []
     for n in cls.param_names:
         a, b = rng.get(n, (-10.0, 10.0))            # radtan k/p terms: a generous symmetric band
-        lo.append(a); hi.append(b)
+        lo.append(a)
+        hi.append(b)
     return lo, hi
 
 

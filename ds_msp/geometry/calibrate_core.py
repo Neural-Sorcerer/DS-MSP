@@ -15,11 +15,10 @@ retraction Jacobian ``J_r(0) = I`` drops out — the extrinsics Jacobian is the 
 
 from __future__ import annotations
 
-from typing import List, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import numpy as np
 
-from ..core.contracts import CameraModel
 from ..core.lie import hat_batch, so3_exp
 from ..core.optimize import OptResult, schur_lm
 

@@ -111,7 +111,7 @@ def main():
                              image_root=image_root)
 
     m = res["metrics"]
-    print(f"\nper-camera model -> reprojection RMS (px):")
+    print("\nper-camera model -> reprojection RMS (px):")
     for c in sorted(res["models"]):
         print(f"  cam {c}: {res['models'][c]:13s}  rms={m['rms_px'][c]:.4f}")
     if m["worst_baseline_pct_vs_gt"] is not None:

@@ -3,11 +3,9 @@
 Builds a synthetic Scenario (so the test is self-contained, no external dataset) and exercises
 ``rig.run.calibrate_scenario`` the way ``scripts/calibrate_rig.py`` does on real data.
 """
-import os
 
 import cv2
 import numpy as np
-import pytest
 
 from ds_msp.io.mccalib import CameraGT, Scenario
 from ds_msp.models.radtan import RadTanModel

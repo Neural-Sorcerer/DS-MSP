@@ -41,7 +41,8 @@ def _make_board_obs(noise_px=0.1, seed=0):
     rng = np.random.default_rng(seed)
     board_obs = []
     for fr in range(40):
-        axis = rng.normal(size=3); axis /= np.linalg.norm(axis)
+        axis = rng.normal(size=3)
+        axis /= np.linalg.norm(axis)
         Tg = _T(axis * rng.uniform(-0.5, 0.5),
                 [rng.uniform(-0.25, 0.25), rng.uniform(-0.2, 0.2), rng.uniform(1.9, 2.5)])
         for c, Tcg in cams.items():

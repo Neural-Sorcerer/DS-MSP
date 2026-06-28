@@ -10,7 +10,7 @@ subsets, gate by rotational consistency (15 deg), and aggregate.
 
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import cv2
 import numpy as np
@@ -95,14 +95,17 @@ def handeye_bootstrap(poses_a: List[np.ndarray], poses_b: List[np.ndarray], *,
         worst = max((_rot_angle_deg((np.linalg.inv(Mb @ X) @ (X @ Ma))[:3, :3])
                      for Ma, Mb in zip(Ma_list, Mb_list)), default=180.0)
         if worst < gate_deg:
-            Rs.append(X[:3, :3]); ts.append(X[:3, 3])
+            Rs.append(X[:3, :3])
+            ts.append(X[:3, 3])
 
     if len(Rs) > 3:
         R = average_rotation(Rs)
         t = average_translation(np.array(ts))
     else:
         return _single_handeye(poses_a, poses_b)
-    T = np.eye(4); T[:3, :3] = R; T[:3, 3] = t
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = t
     return T
 
 

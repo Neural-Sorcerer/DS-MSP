@@ -54,7 +54,8 @@ def test_intrinsics_seed_median_under_outliers():
                         np.array([rng.uniform(-.2, .2), rng.uniform(-.2, .2),
                                   rng.uniform(1.8, 2.6)]),
                         noise=0.3, outlier_frac=0.15, rng=rng) for _ in range(24)]
-    op = [v[0] for v in views]; ip = [v[1] for v in views]
+    op = [v[0] for v in views]
+    ip = [v[1] for v in views]
     K, _poses = intrinsics_seed(op, ip, W, H)
     assert 100 * abs(K[0, 0] - K_TRUE[0, 0]) / K_TRUE[0, 0] < 1.0
     assert 100 * abs(K[1, 1] - K_TRUE[1, 1]) / K_TRUE[1, 1] < 1.0
@@ -65,7 +66,8 @@ def test_ransac_pnp_normalized_robust_to_outliers():
     rng = np.random.default_rng(5)
     X, pn = _make_view(np.eye(3), R, t, noise=0.0, rng=rng)   # K=I -> normalized coords
     bad = rng.random(len(pn)) < 0.20
-    pn = pn.copy(); pn[bad] += rng.uniform(-0.05, 0.05, size=(int(bad.sum()), 2))
+    pn = pn.copy()
+    pn[bad] += rng.uniform(-0.05, 0.05, size=(int(bad.sum()), 2))
     T, inl = ransac_pnp_normalized(X, pn, focal=800.0, thresh_px=3.0)
     assert T is not None
     assert np.abs(T[:3, :3] - R).max() < 1e-2

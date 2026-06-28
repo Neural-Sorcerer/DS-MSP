@@ -126,7 +126,7 @@ def _write_markdown(rows, worst_base, worst_foc_mc, base_ok, foc_ok, mc_vs_gt_ma
         L.append(f"| {r['dataset']} | {r['cam']} | {r['model']} | {r['mode']} | "
                  f"{r['gt_fx']:.0f} | {r['mc_fx']:.0f} | {r['opt_fx']:.0f} | {r['foc_gt']:.2f} | "
                  f"{r['foc_mc']:.2f} | {r['pp_mc']:.2f} | "
-                 f"{'—' if np.isnan(r['base']) else f'{r['base']:.3f}'} | {r['rms']:.3f} |")
+                 f"{'—' if np.isnan(r['base']) else format(r['base'], '.3f')} | {r['rms']:.3f} |")
     L += ["",
           f"**Worst extrinsic baseline error vs GT: {worst_base:.3f}%** "
           f"({'PASS &lt;1%' if base_ok else 'FAIL'}).",

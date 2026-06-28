@@ -23,7 +23,9 @@ def _l2(model, X, uv):
     pn = (rays[ok, :2] / rays[ok, 2:3]).astype(np.float64)
     okp, rv, tv = cv2.solvePnP(X[ok].astype(np.float64), pn, np.eye(3), None,
                                flags=cv2.SOLVEPNP_ITERATIVE)
-    T = np.eye(4); T[:3, :3] = cv2.Rodrigues(rv)[0]; T[:3, 3] = tv.ravel()
+    T = np.eye(4)
+    T[:3, :3] = cv2.Rodrigues(rv)[0]
+    T[:3, 3] = tv.ravel()
     return T
 
 
@@ -32,7 +34,8 @@ def test_reweight_beats_naive_l2_by_more_than_half_at_20pct():
     l2e, rwe = [], []
     for _ in range(20):
         model = RadTanModel(F, F, W / 2, H / 2, -0.05, 0.01, 0.0, 0.0, 0.0)
-        X = rng.uniform(-0.35, 0.35, size=(40, 3)); X[:, 2] += 2.0
+        X = rng.uniform(-0.35, 0.35, size=(40, 3))
+        X[:, 2] += 2.0
         Tgt = se3_exp(np.r_[rng.uniform(-0.2, 0.2, 3), rng.uniform(-0.3, 0.3, 3)])
         uv, _ = model.project((Tgt[:3, :3] @ X.T).T + Tgt[:3, 3])
         uv += rng.normal(scale=0.3, size=uv.shape)
@@ -81,7 +84,8 @@ def test_studentize_helps_self_masking_leverage_outlier():
     ns, st = [], []
     for _ in range(40):
         model = RadTanModel(F, F, W / 2, H / 2, -0.05, 0.01, 0.0, 0.0, 0.0)
-        X = rng.uniform(-0.25, 0.25, size=(10, 3)); X[:, 2] += 2.0
+        X = rng.uniform(-0.25, 0.25, size=(10, 3))
+        X[:, 2] += 2.0
         X[0] = [1.2, 1.2, 1.3]                              # high-leverage corner
         Tgt = se3_exp(np.r_[rng.uniform(-0.12, 0.12, 3), rng.uniform(-0.2, 0.2, 3)])
         uv, val = model.project((Tgt[:3, :3] @ X.T).T + Tgt[:3, 3])
@@ -91,6 +95,7 @@ def test_studentize_helps_self_masking_leverage_outlier():
         uv[0] += [10.0, -10.0]                              # modest, self-masking shift
         Tn = robust_pose_irls(model, X, uv, studentize=False)
         Ts = robust_pose_irls(model, X, uv, studentize=True)
-        ns.append(_err(Tn, Tgt)); st.append(_err(Ts, Tgt))
+        ns.append(_err(Tn, Tgt))
+        st.append(_err(Ts, Tgt))
     assert np.median(st) < 0.5 * np.median(ns), \
         f"studentize {np.median(st):.3f} not <50% of plain {np.median(ns):.3f}"

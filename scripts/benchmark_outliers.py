@@ -100,7 +100,8 @@ def _leverage_experiment(seed=1):
     for _ in range(60):
         model = RadTanModel(F, F, W / 2, H / 2, -0.05, 0.01, 0.0, 0.0, 0.0)
         # few points so one corner carries real influence; corner 0 is the high-leverage one
-        X = rng.uniform(-0.25, 0.25, size=(10, 3)); X[:, 2] += 2.0
+        X = rng.uniform(-0.25, 0.25, size=(10, 3))
+        X[:, 2] += 2.0
         X[0] = [1.2, 1.2, 1.3]                              # far, off-axis -> high leverage
         Tgt = se3_exp(np.r_[rng.uniform(-0.12, 0.12, 3), rng.uniform(-0.2, 0.2, 3)])
         Xc = (Tgt[:3, :3] @ X.T).T + Tgt[:3, 3]
@@ -113,7 +114,8 @@ def _leverage_experiment(seed=1):
         Tn = rp(model, X, uv, studentize=False)
         if Ts is None or Tn is None:
             continue
-        dR_s.append(_pose_err(Ts, Tgt)[0]); dR_ns.append(_pose_err(Tn, Tgt)[0])
+        dR_s.append(_pose_err(Ts, Tgt)[0])
+        dR_ns.append(_pose_err(Tn, Tgt)[0])
     return float(np.median(dR_ns)), float(np.median(dR_s))
 
 

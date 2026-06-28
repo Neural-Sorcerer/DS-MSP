@@ -62,8 +62,12 @@ def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
         # Genuinely 3D target (like a calibration cube): tilt the extra boards and offset
         # them in depth so every camera — even an obliquely angled one — sees a non-planar
         # point cloud. A near-coplanar target would leave each camera's focal ambiguous.
-        T1 = np.eye(4); T1[:3, :3] = _exp([0.0, 0.6, 0.0]); T1[:3, 3] = [0.45, 0.0, 0.25]
-        T2 = np.eye(4); T2[:3, :3] = _exp([-0.6, 0.0, 0.0]); T2[:3, 3] = [0.0, 0.45, 0.25]
+        T1 = np.eye(4)
+        T1[:3, :3] = _exp([0.0, 0.6, 0.0])
+        T1[:3, 3] = [0.45, 0.0, 0.25]
+        T2 = np.eye(4)
+        T2[:3, :3] = _exp([-0.6, 0.0, 0.0])
+        T2[:3, 3] = [0.0, 0.45, 0.25]
         boards[1] = T1
         boards[2] = T2
     obj = make_object(boards)
@@ -76,13 +80,16 @@ def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
         R = np.array([[np.cos(ang), 0, np.sin(ang)],
                       [0, 1, 0], [-np.sin(ang), 0, np.cos(ang)]])
         t = np.array([0.15 * c, 0.0, 0.0])
-        T = np.eye(4); T[:3, :3] = R; T[:3, 3] = t
+        T = np.eye(4)
+        T[:3, :3] = R
+        T[:3, 3] = t
         gt_ext[c] = T
 
     object_obs: List[ObjectObs] = []
     for fr in range(n_frame):
         # random object pose in front of the rig
-        axis = rng.normal(size=3); axis /= np.linalg.norm(axis)
+        axis = rng.normal(size=3)
+        axis /= np.linalg.norm(axis)
         ang = rng.uniform(-0.55, 0.55)
         from ds_msp.core.lie import so3_exp
         Rg = so3_exp(axis * ang)
@@ -90,7 +97,9 @@ def make_rig(n_cam=3, n_frame=40, noise_px=0.0, seed=0, w=1280, h=960,
         # is observable -> focal well constrained) while keeping most views full.
         tg = np.array([rng.uniform(-0.35, 0.35), rng.uniform(-0.3, 0.3),
                        rng.uniform(1.8, 2.6)])
-        T_g_o = np.eye(4); T_g_o[:3, :3] = Rg; T_g_o[:3, 3] = tg
+        T_g_o = np.eye(4)
+        T_g_o[:3, :3] = Rg
+        T_g_o[:3, 3] = tg
         Xg = (T_g_o[:3, :3] @ obj.pts_3d.T).T + T_g_o[:3, 3]
         for c in range(n_cam):
             Xc = (gt_ext[c][:3, :3] @ Xg.T).T + gt_ext[c][:3, 3]

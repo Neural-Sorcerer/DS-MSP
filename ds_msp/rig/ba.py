@@ -61,7 +61,8 @@ def _tangent_basis(f: np.ndarray):
     helper = np.tile(np.array([0.0, 1.0, 0.0]), (f.shape[0], 1))
     near = np.abs(f @ np.array([0.0, 1.0, 0.0])) > 0.9
     helper[near] = np.array([1.0, 0.0, 0.0])
-    e_u = np.cross(helper, f); e_u /= np.linalg.norm(e_u, axis=1, keepdims=True)
+    e_u = np.cross(helper, f)
+    e_u /= np.linalg.norm(e_u, axis=1, keepdims=True)
     e_v = np.cross(f, e_u)
     return e_u, e_v
 
@@ -88,12 +89,15 @@ def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
     # tangent column layout
     col, cam_col, obj_col, intr_col = 0, {}, {}, {}
     for c in cam_ids:
-        cam_col[c] = col; col += 6
+        cam_col[c] = col
+        col += 6
     for k in obj_keys:
-        obj_col[k] = col; col += 6
+        obj_col[k] = col
+        col += 6
     if not fix_intrinsics:
         for c in sorted(rig.cameras):
-            intr_col[c] = col; col += Pn[c]
+            intr_col[c] = col
+            col += Pn[c]
     K = col
 
     angular = residual_mode == "angular"
@@ -267,10 +271,12 @@ def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
     # shared layout: non-ref camera extrinsics, then (optionally) per-camera intrinsics
     col, cam_col, intr_col = 0, {}, {}
     for c in cam_ids:
-        cam_col[c] = col; col += 6
+        cam_col[c] = col
+        col += 6
     if not fix_intrinsics:
         for c in sorted(rig.cameras):
-            intr_col[c] = col; col += Pn[c]
+            intr_col[c] = col
+            col += Pn[c]
     shared_dim = col
 
     # groups = object poses; gather each group's observations once
@@ -326,7 +332,9 @@ def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
                 B = np.empty((m, 6))
                 B[:, :3] = Jw_o
                 B[:, 3:] = Jt_o
-                rs.append(r); As.append(A); Bs.append(B)
+                rs.append(r)
+                As.append(A)
+                Bs.append(B)
             r_list.append(np.concatenate(rs))
             A_list.append(np.vstack(As))
             B_list.append(np.vstack(Bs))
@@ -507,7 +515,8 @@ def refine_object_structure(rig: RigState, object_obs: List[ObjectObs], *,
         return out
     X = pts[free_sorted].astype(float).copy()       # (F,3) free points, working copy
     for _ in range(iters):
-        H = np.zeros((F, 3, 3)); g = np.zeros((F, 3))
+        H = np.zeros((F, 3, 3))
+        g = np.zeros((F, 3))
         for cam, key, slots, gidx, uv in blocks:
             Tcg, Tgo = rig.T_c_g[cam], rig.object_poses[key]
             M = Tcg[:3, :3] @ Tgo[:3, :3]

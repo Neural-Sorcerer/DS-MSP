@@ -78,12 +78,15 @@ def robust_pose_irls(
         J = np.zeros((n, 2, 6))
         invZ = np.where(good, 1.0 / Z, 0.0)
         Jp = np.zeros((n, 2, 3))
-        Jp[:, 0, 0] = invZ; Jp[:, 0, 2] = -Pc[:, 0] * invZ * invZ
-        Jp[:, 1, 1] = invZ; Jp[:, 1, 2] = -Pc[:, 1] * invZ * invZ
+        Jp[:, 0, 0] = invZ
+        Jp[:, 0, 2] = -Pc[:, 0] * invZ * invZ
+        Jp[:, 1, 1] = invZ
+        Jp[:, 1, 2] = -Pc[:, 1] * invZ * invZ
         for i in range(n):                               # [I | -hat(P)] left perturbation
             Gi = np.hstack([np.eye(3), -hat(Pc[i])])
             J[i] = foc * Jp[i] @ Gi
-        e[~good] = 0.0; J[~good] = 0.0
+        e[~good] = 0.0
+        J[~good] = 0.0
 
         s = np.einsum("nk,nk->n", e, e)                  # squared residual per point (px^2)
         Jflat = J.reshape(2 * n, 6)

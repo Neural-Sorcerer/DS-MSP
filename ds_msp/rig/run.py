@@ -15,8 +15,7 @@ import numpy as np
 
 from ..io.mccalib import (Scenario, save_detection_images, save_mccalib_results,
                           save_reprojection_images)
-from ..models.registry import (FISHEYE_MODELS, PINHOLE_MODELS, canonical_name,
-                               model_class)
+from ..models.registry import (FISHEYE_MODELS, PINHOLE_MODELS)
 from . import ba
 from .rig_calibrate import (_gated_pnp, calibrate_rig, make_bundle_front_end,
                             paraxial_focal)

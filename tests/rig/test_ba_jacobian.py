@@ -38,12 +38,12 @@ def _check(fix_intrinsics, fix_extrinsics=False):
     state0, residual, jacobian, retract, K = ba.build_problem(
         rig, obs, fix_intrinsics=fix_intrinsics, fix_extrinsics=fix_extrinsics)
     J = jacobian(state0)
-    r0 = residual(state0)
     eps = 1e-6
     rng = np.random.default_rng(1)
     # check a random subset of tangent directions
     for j in rng.choice(K, size=min(K, 25), replace=False):
-        d = np.zeros(K); d[j] = eps
+        d = np.zeros(K)
+        d[j] = eps
         rp = residual(retract(state0, d))
         rm = residual(retract(state0, -d))
         fd = (rp - rm) / (2 * eps)
@@ -75,7 +75,8 @@ def test_jacobian_angular_bearing_residual():
     eps = 1e-6
     rng = np.random.default_rng(2)
     for j in rng.choice(K, size=min(K, 25), replace=False):
-        d = np.zeros(K); d[j] = eps
+        d = np.zeros(K)
+        d[j] = eps
         fd = (residual(retract(state0, d)) - residual(retract(state0, -d))) / (2 * eps)
         assert np.allclose(J[:, j], fd, atol=1e-3, rtol=1e-3), f"angular Jac col {j}"
 
@@ -85,12 +86,14 @@ def test_angular_refine_recovers_extrinsics():
     import copy
     from ds_msp.core.lie import so3_exp
     rig, obs = _build_small_rig()
-    pert = copy.copy(rig); pert.T_c_g = dict(rig.T_c_g)
+    pert = copy.copy(rig)
+    pert.T_c_g = dict(rig.T_c_g)
     for c in list(pert.T_c_g):
         if c == pert.ref_cam_id:
             continue
         T = pert.T_c_g[c].copy()
-        T[:3, :3] = T[:3, :3] @ so3_exp([0.012, -0.009, 0.007]); T[:3, 3] += 0.012
+        T[:3, :3] = T[:3, :3] @ so3_exp([0.012, -0.009, 0.007])
+        T[:3, 3] += 0.012
         pert.T_c_g[c] = T
     before = ba.reprojection_rms(pert, obs)
     out = ba.refine(pert, obs, fix_intrinsics=True, residual_mode="angular", max_iter=60)

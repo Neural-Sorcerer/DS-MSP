@@ -21,8 +21,7 @@ from ..core.contracts import CameraModel
 from ..models.radtan import RadTanModel
 from . import ba
 from .extrinsics import init_camera_groups
-from .pose_init import (average_object_pose_in_group, estimate_pose_ransac,
-                        robust_pose_irls)
+from .pose_init import (average_object_pose_in_group, robust_pose_irls)
 from .types import Object3D, ObjectObs, RigState
 
 
@@ -189,7 +188,8 @@ def _model_aware_seed(model_cls, Kp, ge6, obj) -> CameraModel:
         Xc = X[inl] @ R.T + t
         rays.append(Xc / np.linalg.norm(Xc, axis=1, keepdims=True))
         pix.append(uv[inl])
-        Xcal.append(X[inl]); uvcal.append(uv[inl])         # inlier set for calibrate
+        Xcal.append(X[inl])
+        uvcal.append(uv[inl])         # inlier set for calibrate
     seed = _seed_from_K(model_cls, Kp)
     if rays and sum(len(r) for r in rays) >= 6:
         seed.initialize_from_correspondences(Kp, np.vstack(rays), np.vstack(pix))

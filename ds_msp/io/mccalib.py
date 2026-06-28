@@ -90,7 +90,8 @@ def _load_detections(path: str, obj: Object3D):
         cid_seq = _seq(cn.getNode("charuco_idxs"))
         frames: Dict[int, Tuple[list, list]] = {}
         for k in range(len(frame_idxs)):
-            f = int(frame_idxs[k]); b = int(board_idxs[k])
+            f = int(frame_idxs[k])
+            b = int(board_idxs[k])
             pts = _flat(pts_seq[k]).reshape(-1, 2)
             cids = _flat(cid_seq[k]).astype(int).ravel()
             rows, uvs = frames.setdefault(f, ([], []))

@@ -15,7 +15,6 @@ import os
 import sys
 import tempfile
 
-import numpy as np
 
 sys.path.insert(0, ".")
 from ds_msp.io.mccalib import load_scenario                                 # noqa: E402
