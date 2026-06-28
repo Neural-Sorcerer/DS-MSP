@@ -5,7 +5,7 @@ CI fails if this file is out of sync with the registry and the test suite.
 
 | Requirement | Type | Area | ARC | Code module | Verification | Status | Release-gated | Linked tests |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| FR-ADAPT-001 | FR | ADAPT | ARC-ADAPT | `ds_msp/adapt/convert.py` | `tests/adapt/test_convert.py` | implemented | no | tests/adapt/test_convert.py (module)<br>tests/realdata/test_mccalib_calibration.py (module) |
+| FR-ADAPT-001 | FR | ADAPT | ARC-ADAPT | `ds_msp/adapt/convert.py` | `tests/adapt/test_convert.py` | implemented | no | tests/adapt/test_convert.py (module)<br>tests/adapt/test_convert_robustness.py (module)<br>tests/realdata/test_mccalib_calibration.py (module) |
 | FR-ADAPT-002 | FR | ADAPT | ARC-ADAPT | `ds_msp/adapt/autoselect.py` | `tests/adapt/test_autoselect.py` | implemented | no | tests/adapt/test_autoselect.py (module) |
 | FR-CALIB-001 | FR | CALIB | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/calib/test_generic_calibrate.py` | implemented | yes | tests/calib/test_generic_calibrate.py (module)<br>tests/calib/test_robust_calibrate.py (module)<br>tests/realdata/test_mccalib_calibration.py (module) |
 | FR-CALIB-002 | FR | CALIB | ARC-GEOMETRY | `ds_msp/geometry/resection.py` | `tests/calib/test_robust_init.py` | implemented | no | tests/calib/test_robust_init.py (module) |
@@ -42,6 +42,7 @@ CI fails if this file is out of sync with the registry and the test suite.
 | NFR-NUM-004 | NFR | NUM | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/realdata/test_mccalib_calibration.py` | implemented | yes | tests/realdata/test_mccalib_calibration.py (module) |
 | NFR-NUM-005 | NFR | NUM | ARC-MODELS | `ds_msp/models/double_sphere.py` | `tests/models/test_ds_model.py` | implemented | no | tests/models/test_ds_model.py (module) |
 | NFR-NUM-006 | NFR | NUM | ARC-CALIB | `ds_msp/calib/bundle.py` | `tests/calib/test_robust_calibrate.py` | implemented | no | tests/calib/test_robust_calibrate.py (module) |
+| NFR-NUM-007 | NFR | NUM | ARC-ADAPT | `ds_msp/adapt/convert.py` | `tests/adapt/test_convert_robustness.py` | implemented | no | tests/adapt/test_convert_robustness.py (module) |
 | NFR-PORT-001 | NFR | PORT | ARC-CORE | `ds_msp` | `.github/workflows/ci.yml` | implemented | no | — |
 | NFR-PRIV-001 | NFR | PRIV | ARC-CORE | `.` | `tools/check_tree_hygiene.py` | implemented | no | — |
 | NFR-REPRO-001 | NFR | REPRO | ARC-CORE | `tests` | `tests/contract/test_gradcheck.py` | implemented | no | tests/contract/test_gradcheck.py (module) |

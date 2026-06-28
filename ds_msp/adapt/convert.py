@@ -10,12 +10,15 @@ Global optimum, any scenario
 ----------------------------
 A single linear seed plus one local refine can stall in a poor basin when the
 target's shape parameters are far from their seed (e.g. a strong-``xi`` Double
-Sphere, or a polynomial OCam whose higher coefficients matter). To find the
-*global* optimum regardless of the source, the refine runs as a **multi-start**:
-the deterministic linear seed plus ``n_restarts`` dispersed seeds over the target's
-shape parameters, keeping the lowest-cost fit. The intrinsics (fx, fy, cx, cy) are
-held at their linear-seed values for every start because they are already optimal
-in closed form; only the *shape* parameters are dispersed.
+Sphere, an EUCM+ whose ``beta`` is far from the linear seed's ``beta=1``, or a
+polynomial OCam whose higher coefficients matter). To find the *global* optimum
+regardless of the source, the refine runs as a **multi-start**: the linear seed,
+a **deterministic sweep** that walks each finitely-bounded shape parameter across
+its range, and ``n_restarts`` additional random dispersed seeds — keeping the
+lowest-cost fit. The deterministic sweep makes the result reproducible and removes
+the random-restart lottery that previously let some targets (notably EUCM+) settle
+in a wrong basin and fail even to self-convert. Only the *shape* parameters are
+seeded; the intrinsics (fx, fy, cx, cy) start from their closed-form linear seed.
 
 Decoupled by dependency injection: ``convert`` takes the source instance and the
 target *class*, so this module imports no concrete model — only the contract and
@@ -38,18 +41,38 @@ from .sampling import sample_image_grid
 _INTRINSIC_NAMES = frozenset({"fx", "fy", "cx", "cy"})
 
 
+# Fractions of each finite bound span used for the deterministic shape sweep.
+_SWEEP_FRACS = (0.2, 0.5, 0.8)
+
+
 def _shape_seeds(target_cls: Type[CameraModel], base: np.ndarray,
                  n_restarts: int, rng: np.random.Generator) -> List[np.ndarray]:
-    """Linear seed + ``n_restarts`` dispersed seeds over shape parameters."""
+    """Linear seed + a deterministic shape sweep + ``n_restarts`` random dispersed seeds.
+
+    The deterministic sweep moves *one* finitely-bounded shape parameter at a time to a few
+    fractions of its range (others held at the linear seed). This guarantees a shape optimum
+    that sits *far* from the linear seed is reached without relying on the luck of the random
+    restarts — e.g. an EUCM+ whose ``beta`` is far from the linear seed's ``beta=1`` would
+    otherwise self-convert into a wrong basin. The random restarts are retained on top for
+    joint (multi-parameter) basins; they keep the previous behaviour for ``n_restarts>0``.
+    """
     seeds = [base.copy()]
-    if n_restarts <= 0:
-        return seeds
     lb, ub = target_cls.param_bounds()
     shape_idx = [i for i, n in enumerate(target_cls.param_names)
                  if n not in _INTRINSIC_NAMES]
     if not shape_idx:
         return seeds
-    for _ in range(n_restarts):
+    # Deterministic per-parameter sweep across each finite bound range.
+    for i in shape_idx:
+        lo, hi = lb[i], ub[i]
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            continue
+        for frac in _SWEEP_FRACS:
+            p = base.copy()
+            p[i] = lo + frac * (hi - lo)
+            seeds.append(np.clip(p, lb, ub))
+    # Random dispersed restarts (joint perturbations), as before.
+    for _ in range(max(0, n_restarts)):
         p = base.copy()
         for i in shape_idx:
             lo, hi = lb[i], ub[i]
@@ -87,9 +110,10 @@ def convert(source: CameraModel, target_cls: Type[CameraModel], *,
         than the source (e.g. converting a >180 deg fisheye into a pinhole-like
         model) so the fit is not dragged by unrepresentable rays.
     n_restarts : int
-        Number of dispersed shape-parameter restarts in addition to the linear
-        seed (multi-start global optimization). ``0`` reproduces the legacy
-        single-start behaviour.
+        Number of *random* dispersed shape-parameter restarts, in addition to the
+        linear seed and the always-on deterministic shape sweep. ``0`` keeps just
+        the linear seed plus the deterministic sweep (already multi-start and
+        reproducible); higher values add random joint-perturbation restarts.
     seed : int
         RNG seed for the restart dispersion, so conversions are reproducible.
 

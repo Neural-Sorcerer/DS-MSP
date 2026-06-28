@@ -43,6 +43,7 @@ import numpy as np
 import pytest
 
 from ds_msp.adapt import convert, sample_image_grid
+from ds_msp.adapt.evaluate import reprojection_report
 from ds_msp.calib import calibrate
 from ds_msp.detect.charuco import BoardSpec, detect_image, make_detectors
 from ds_msp.models.dsplus import DSPlusModel
@@ -150,10 +151,11 @@ def _fit_camera(cam: int) -> dict:
         # FOV (ray-from-axis, max) the corners actually span, via the DS+ fit.
         rays, valid = dsp["model"].unproject(all_px)
         half = float(np.degrees(np.arccos(np.clip(rays[valid, 2], -1.0, 1.0))).max())
-        # convert(): self-conversion (must be exact) and EUCM+ -> DS+ (robust target).
+        # convert(): self-conversions (must be exact for both targets) and EUCM+ -> DS+.
         dsp_self, _ = convert(dsp["model"], DSPlusModel, width=W, height=H)
+        eup_self, _ = convert(eup["model"], EUCMPlusModel, width=W, height=H)
         dsp_from_eu, _ = convert(eup["model"], DSPlusModel, width=W, height=H)
-    out = dict(dsp=dsp, eup=eup, dsp_self=dsp_self, dsp_from_eu=dsp_from_eu,
+    out = dict(dsp=dsp, eup=eup, dsp_self=dsp_self, eup_self=eup_self, dsp_from_eu=dsp_from_eu,
                refK=refK, ref_reproj=ref_reproj, W=W, H=H, half_fov=half,
                n_views=len(Xs), n_corners=sum(len(x) for x in Xs))
     _CACHE[cam] = out
@@ -188,11 +190,17 @@ def test_intrinsics_recovered_per_camera(fitted, cam):
 
 @pytest.mark.parametrize("cam", CAMERAS)
 def test_convert_self_is_exact_per_camera(fitted, cam):
-    """A from-scratch calibration is a fixed point of convert(): DS+ -> DS+ reproduces the
-    source parameters to machine precision."""
+    """A from-scratch calibration is a fixed point of convert(): a model -> its own class
+    reproduces the source *projection* to machine precision. Checked for BOTH DS+ and EUCM+ —
+    EUCM+ is the one whose self-convert previously failed (wrong basin) before the
+    deterministic shape sweep. Exactness is measured by reprojection RMS, not parameter
+    distance: when alpha sits at its bound the parameterization is degenerate (equivalent
+    param sets project identically), so projection equivalence is the meaningful contract."""
     r = fitted(cam)
-    delta = np.abs(r["dsp_self"].params - r["dsp"]["model"].params).max()
-    assert delta < 1e-5, (cam, delta)
+    rms_ds = reprojection_report(r["dsp"]["model"], r["dsp_self"], r["W"], r["H"])["rms_px"]
+    rms_eu = reprojection_report(r["eup"]["model"], r["eup_self"], r["W"], r["H"])["rms_px"]
+    assert rms_ds < 1e-3, (cam, "dsplus", rms_ds)
+    assert rms_eu < 1e-3, (cam, "eucmplus", rms_eu)
 
 
 @pytest.mark.parametrize("cam", CAMERAS)

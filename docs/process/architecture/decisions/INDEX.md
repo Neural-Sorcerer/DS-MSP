@@ -14,7 +14,9 @@ zero-padded and monotonic (`ADR-NNNN`); CI checks this index stays complete and 
 | [ADR-0004](ADR-0004-cv2-scipy-free-foundation.md) | The math foundation is cv2/scipy-free | Accepted | Portable solver path |
 | [ADR-0005](ADR-0005-dsplus-eucmplus.md) | DS⁺ / EUCM⁺ closed-form-invertible camera models | Accepted | Sub-0.3px fit with a closed-form inverse |
 | [ADR-0006](ADR-0006-synthetic-real-release-gate.md) | Synthetic-then-real-data release gate | Accepted | No public release without real-data validation |
+| [ADR-0007](ADR-0007-deterministic-convert-seeding.md) | Deterministic shape-parameter sweep in model conversion | Accepted | Reproducible, exact self-conversion (no restart lottery) |
 
 > The first six ADRs are **retrofits**: they record decisions already embodied in the codebase, so
 > the governance system is demonstrated against real architecture from day one. Adoption date is the
-> date the record was written, not the date the code first shipped.
+> date the record was written, not the date the code first shipped. **ADR-0007 onward** are decisions
+> recorded as they are made (ADR-0007: a convert-robustness fix found by real-data study).
