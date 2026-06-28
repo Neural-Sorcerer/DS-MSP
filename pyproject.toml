@@ -84,11 +84,44 @@ name = "core is the dependency-free foundation"
 type = "forbidden"
 source_modules = ["ds_msp.core"]
 forbidden_modules = [
-    "ds_msp.models", "ds_msp.ops", "ds_msp.adapt",
+    "ds_msp.data", "ds_msp.geometry", "ds_msp.models", "ds_msp.detect",
+    "ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg",
+    "ds_msp.stereo", "ds_msp.rig", "ds_msp.vo",
     "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
 ]
 
 [[tool.importlinter.contracts]]
-name = "service layers are mutually independent"
+name = "data layer depends only on core"
+type = "forbidden"
+source_modules = ["ds_msp.data"]
+forbidden_modules = [
+    "ds_msp.geometry", "ds_msp.models", "ds_msp.detect", "ds_msp.ops",
+    "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo",
+    "ds_msp.rig", "ds_msp.vo", "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
+]
+
+[[tool.importlinter.contracts]]
+name = "geometry layer depends only on core and data"
+type = "forbidden"
+source_modules = ["ds_msp.geometry"]
+forbidden_modules = [
+    "ds_msp.models", "ds_msp.detect", "ds_msp.ops", "ds_msp.adapt",
+    "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo", "ds_msp.rig",
+    "ds_msp.vo", "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
+]
+
+[[tool.importlinter.contracts]]
+name = "capability services are mutually independent"
 type = "independence"
 modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo"]
+
+[[tool.importlinter.contracts]]
+name = "capabilities never import a pipeline (acyclic)"
+type = "forbidden"
+source_modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo"]
+forbidden_modules = ["ds_msp.rig", "ds_msp.vo"]
+
+[[tool.importlinter.contracts]]
+name = "pipelines compose capabilities but stay independent of each other"
+type = "independence"
+modules = ["ds_msp.rig", "ds_msp.vo"]
