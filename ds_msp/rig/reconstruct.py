@@ -32,7 +32,7 @@ from typing import Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
-from ..calib.charuco import (BoardSpec, _frame_id_from_name, board_object_points,
+from ..detect.charuco import (BoardSpec, _frame_id_from_name, board_object_points,
                              detect_image, make_detectors)
 from .object3d import build_objects
 from .pose_init import robust_pose_irls

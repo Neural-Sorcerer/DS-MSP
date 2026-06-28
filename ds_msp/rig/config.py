@@ -37,7 +37,7 @@ import cv2
 import numpy as np
 from scipy.optimize import least_squares
 
-from ..calib.charuco import BoardSpec, detect_rig, single_board_object
+from ..detect.charuco import BoardSpec, detect_rig, single_board_object
 from ..io.mccalib import (Scenario, _load_cameras, _load_detections, _load_groundtruth,
                           _load_object, radtan_from_cameragt)
 from ..models.kb import KannalaBrandtModel
