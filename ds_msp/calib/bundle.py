@@ -129,13 +129,47 @@ def _reproj_errors(model, poses, X_world_list, keypoints_list, masks) -> np.ndar
     return np.concatenate(errs) if errs else np.empty(0)
 
 
+def _shape_seeds(cls, base: np.ndarray, n_restarts: int, seed: int):
+    """Multi-start seeds: the base intrinsics with the **shape** parameters (index ≥ 4 by the
+    ``[fx, fy, cx, cy, …]`` convention) dispersed across their bounds. Focal/principal point are
+    held at the base seed (they are well-constrained by the data); the shape parameters own the
+    basins a single local refine can fall into (the DS ``ξ`` fold, EUCM ``α→1``, etc.)."""
+    lb, ub = cls.param_bounds()
+    seeds = [base.copy()]
+    if n_restarts <= 0 or len(base) <= 4:
+        return seeds
+    rng = np.random.default_rng(seed)
+    for _ in range(n_restarts):
+        p = base.copy()
+        for j in range(4, len(base)):
+            lo, hi = lb[j], ub[j]
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                p[j] = rng.uniform(lo + 0.15 * (hi - lo), hi - 0.15 * (hi - lo))
+        seeds.append(np.clip(p, lb, ub))
+    return seeds
+
+
+def _seed_and_fit(cls, params0, X_world_list, keypoints_list, visibility_list,
+                  *, kernel, scale, gnc_start, gnc_iters, max_iter):
+    """Seed per-view poses for ``params0`` then run the BA loop. Returns ``(params, Rb, t, out)``."""
+    seed_model = cls.from_params(params0)
+    rvecs, tvecs = _seed_poses(seed_model, X_world_list, keypoints_list, visibility_list)
+    R0 = np.stack([cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs])
+    t0 = np.stack([np.asarray(t, float) for t in tvecs])
+    return bundle_adjust(cls, params0, R0, t0,
+                         X_world_list, keypoints_list, visibility_list,
+                         kernel=kernel, scale=scale, gnc_start=gnc_start,
+                         gnc_iters=gnc_iters, max_iter=max_iter)
+
+
 def calibrate(init_model: CameraModel,
               X_world_list: List[np.ndarray],
               keypoints_list: List[np.ndarray],
               visibility_list: List[np.ndarray],
               *, max_nfev: int = 200, verbose: int = 0,
               robust: str = "cauchy", robust_scale: "float | str" = "auto",
-              gnc: bool = False,
+              gnc: bool = False, multi_start: bool = True, n_restarts: int = 4,
+              seed: int = 0,
               loss: str | None = None, f_scale: float | None = None) -> Dict:
     """Calibrate any model from checkerboard correspondences — robust by default.
 
@@ -154,6 +188,15 @@ def calibrate(init_model: CameraModel,
         that dissolves spurious minima, then sharpen. Useful only for pathological bad-init
         basins; with two-fold seeding it is unnecessary and re-admits gross outliers, so it is
         off by default (enable it for a known-hard initialization).
+    multi_start : bool
+        Model-aware multi-start auto-init (default ``True``): screen the base seed plus
+        ``n_restarts`` seeds with the **shape** parameters dispersed across their bounds, keep
+        the one with the lowest robust (median) reprojection, then refine it fully. This is what
+        makes a *poor* ``init_model`` (only the type + a rough focal) converge — it rescues
+        wrong-basin shape seeds (the DS ``ξ`` fold, etc.) and is a no-op when the base seed is
+        already good. Determinism is preserved via ``seed``.
+    n_restarts : int
+        Number of dispersed shape seeds for ``multi_start`` (default 4).
 
     Backward compatibility: passing the SciPy-style ``loss`` (``"linear"``/``"huber"``/
     ``"soft_l1"``/``"cauchy"``) and/or ``f_scale`` reproduces the pre-robust-default
@@ -176,10 +219,6 @@ def calibrate(init_model: CameraModel,
     n_img = len(X_world_list)
     masks = [np.asarray(v, bool) for v in visibility_list]
 
-    rvecs, tvecs = _seed_poses(init_model, X_world_list, keypoints_list, visibility_list)
-    R0 = np.stack([cv2.Rodrigues(np.asarray(r, float))[0] for r in rvecs])   # (n,3,3)
-    t0 = np.stack([np.asarray(t, float) for t in tvecs])                     # (n,3)
-
     kernel = robust
     if kernel == "none":
         scale_arg, gnc_start, gnc_iters = 1.0, 0.0, 0
@@ -189,11 +228,31 @@ def calibrate(init_model: CameraModel,
         # ~20% of the iteration budget (a few annealing steps, then the sharp robust fit).
         gnc_start, gnc_iters = (3.0, max(8, max_nfev // 5)) if gnc else (0.0, 0)
 
-    params, Rb, t, out = bundle_adjust(
-        cls, init_model.params, R0, t0,
-        X_world_list, keypoints_list, visibility_list,
-        kernel=kernel, scale=scale_arg, gnc_start=gnc_start, gnc_iters=gnc_iters,
-        max_iter=max_nfev)
+    fit_kw = dict(kernel=kernel, scale=scale_arg, gnc_start=gnc_start, gnc_iters=gnc_iters)
+
+    # Model-aware multi-start auto-init: cheaply screen the base seed + shape-dispersed seeds
+    # (a short BA each), score by the *robust* (median) reprojection so a wrong shape basin is
+    # rejected, then run the full refine from the winning seed. With a single seed this reduces
+    # to one full fit, so non-multistart behaviour is unchanged.
+    seeds = _shape_seeds(cls, init_model.params, n_restarts, seed) if multi_start else [
+        np.asarray(init_model.params, float)]
+    if len(seeds) > 1:
+        screen_iter = max(15, max_nfev // 5)
+        best_seed, best_score = seeds[0], float("inf")
+        for p0 in seeds:
+            pr, Rr, tr, _ = _seed_and_fit(cls, p0, X_world_list, keypoints_list,
+                                          visibility_list, max_iter=screen_iter, **fit_kw)
+            mr = cls.from_params(pr)
+            poses_r = [(cv2.Rodrigues(Rr[i])[0].ravel(), tr[i]) for i in range(n_img)]
+            er = _reproj_errors(mr, poses_r, X_world_list, keypoints_list, masks)
+            score = float(np.median(er)) if er.size else float("inf")
+            if score < best_score:
+                best_seed, best_score = p0, score
+    else:
+        best_seed = seeds[0]
+
+    params, Rb, t, out = _seed_and_fit(cls, best_seed, X_world_list, keypoints_list,
+                                       visibility_list, max_iter=max_nfev, **fit_kw)
     model = cls.from_params(params)
 
     # Absolute (rvec, tvec) per image so downstream code (cv2.Rodrigues) is unaffected.
