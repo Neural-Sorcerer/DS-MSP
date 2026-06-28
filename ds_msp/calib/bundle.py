@@ -18,9 +18,8 @@ import cv2
 import numpy as np
 
 from ..core.contracts import CameraModel
-from ..core.lie import so3_exp, so3_log
+from ..core.lie import so3_exp
 from ..core.optimize import schur_lm
-from .robust_init import ransac_pnp_normalized
 
 #: Map the historical SciPy ``loss`` names to the in-house IRLS kernels.
 _LOSS_TO_KERNEL = {
@@ -38,29 +37,19 @@ def _skew_batch(V: np.ndarray) -> np.ndarray:
     return K
 
 
-def _model_focal(model) -> float:
-    K = model.K
-    return 0.5 * (abs(float(K[0, 0])) + abs(float(K[1, 1])))
-
-
 def _seed_poses(init_model, X_world_list, keypoints_list, visibility_list):
-    """Seed each image's object pose via **from-scratch RANSAC PnP** on the normalized
-    plane (pixels unprojected through the model's own ``unproject``). This replaces the
-    non-robust ``cv2.solvePnP`` DLT: a few gross mis-decoded corners no longer drag the
-    seed pose into a wrong basin from which the bundle's IRLS cannot recover."""
-    focal = _model_focal(init_model)
     rvecs, tvecs = [], []
     for Xw, uv, vis in zip(X_world_list, keypoints_list, visibility_list):
         Xv = Xw[vis].astype(np.float64)
         uvv = uv[vis].astype(np.float64)
         rays, vr = init_model.unproject(uvv)
         use = vr & (rays[:, 2] > 1e-6)
-        if use.sum() >= 6:
+        if use.sum() >= 4:
             pn = rays[use, :2] / rays[use, 2:3]
-            T, inl = ransac_pnp_normalized(Xv[use], pn, focal=focal, thresh_px=3.0)
-            if T is not None and inl.sum() >= 6:
-                rvecs.append(so3_log(T[:3, :3]))
-                tvecs.append(T[:3, 3].copy())
+            ok, rv, tv = cv2.solvePnP(Xv[use], pn, np.eye(3), None)
+            if ok:
+                rvecs.append(rv.ravel())
+                tvecs.append(tv.ravel())
                 continue
         rvecs.append(np.zeros(3))
         tvecs.append(np.array([0.0, 0.0, 1.5]))
