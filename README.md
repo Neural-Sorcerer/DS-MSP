@@ -4,7 +4,7 @@
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
 [![License](https://img.shields.io/badge/license-MIT%20%2B%20PolyForm--NC-blue)](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSING.md)
-![Tests](https://img.shields.io/badge/tests-291%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-417%20passing-brightgreen)
 [![Live demo](https://img.shields.io/badge/%E2%96%B6%20live%20demo-interactive%20studio-6e8bff)](https://munna-manoj.github.io/DS-MSP/)
 
 A clean, tested, **OpenCV-compatible** platform for wide-FOV (fisheye / omnidirectional) cameras: a
@@ -66,7 +66,7 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 | **Model conversion** | Translate a calibration between models **without images or recalibration** (sample → unproject → LM refit). |
 | **Calibration** | Generic Levenberg–Marquardt bundle adjustment for *any* model, with a robust (Cauchy) loss option. |
 | **Ecosystem fluency** | Read/write **Kalibr** camchain YAML; OpenCV-style drop-in API; **TI Jacinto** LDC hardware mesh export. |
-| **Verified, CI-tested** | 368 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
+| **Verified, CI-tested** | 417 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
 
 ---
 
@@ -187,7 +187,7 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 | [`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md) | The guided curriculum (start here to learn) — Part I (calibration) + Part II (geometry & 3D). |
 | [`docs/`](docs) | [`MULTI_MODEL.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md), [`WRITING_GUIDE.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/WRITING_GUIDE.md) (docs style guide). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
-| [`tests/`](tests) | 368 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
+| [`tests/`](tests) | 417 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
 
 The library is **strictly layered** (enforced in CI by import-linter): `core` depends on nothing, the
 service layers depend only on the contract — not on concrete models or each other — and the pure-math
