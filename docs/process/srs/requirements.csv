@@ -8,7 +8,7 @@ FR-CALIB-001,FR,CALIB,Calibrate intrinsics and per-view extrinsics for any model
 FR-CALIB-002,FR,CALIB,Robust pose resection / PnP seeding on the normalized plane,ARC-GEOMETRY,ds_msp/geometry/resection.py,tests/calib/test_robust_init.py,implemented,no
 FR-CALIB-003,FR,CALIB,Estimate stereo relative pose between two cameras,ARC-CALIB,ds_msp/calib/stereo.py,tests/calib/test_stereo.py,implemented,no
 FR-CALIB-004,FR,CALIB,Detect calibration boards (ChArUco / AprilGrid),ARC-DETECT,ds_msp/detect,tests/calib/test_charuco.py,implemented,no
-FR-RIG-001,FR,RIG,Calibrate a multi-camera rig (intrinsics + extrinsics + object poses),ARC-RIG,ds_msp/rig,tests/rig/test_rig_end2end.py,implemented,yes
+FR-RIG-001,FR,RIG,Calibrate a multi-camera rig (intrinsics + extrinsics + object poses) [held for 0.8.0 — excluded from the 0.7.0 wheel pending real-data validation],ARC-RIG,ds_msp/rig,tests/rig/test_rig_end2end.py,planned,yes
 FR-MVG-001,FR,MVG,Recover two-view relative pose and triangulate on bearing vectors,ARC-MVG,ds_msp/mvg/two_view.py,tests/mvg/test_two_view.py,implemented,no
 FR-MVG-002,FR,MVG,Robust two-view pose via RANSAC on Sampson residual,ARC-MVG,ds_msp/mvg/ransac.py,tests/mvg/test_ransac.py,implemented,no
 FR-MVG-003,FR,MVG,Refine two-view pose with angular bundle adjustment,ARC-MVG,ds_msp/mvg/bundle.py,tests/mvg/test_bundle.py,implemented,no

@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/ds-msp)](https://pypi.org/project/ds-msp/)
 [![CI](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml/badge.svg)](https://github.com/Munna-Manoj/DS-MSP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://pypi.org/project/ds-msp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT%20%2B%20PolyForm--NC-blue)](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSING.md)
 ![Tests](https://img.shields.io/badge/tests-291%20passing-brightgreen)
 [![Live demo](https://img.shields.io/badge/%E2%96%B6%20live%20demo-interactive%20studio-6e8bff)](https://munna-manoj.github.io/DS-MSP/)
 
@@ -648,4 +648,12 @@ This project builds on excellent open-source work and research.
 
 ## License
 
-[MIT](https://github.com/Munna-Manoj/DS-MSP/blob/main/LICENSE).
+**Dual-licensed** (see [LICENSING.md](LICENSING.md)):
+
+- The library is **[MIT](LICENSE)** — free for any use, including commercial.
+- The **DS+** and **EUCM+** model implementations (`ds_msp/models/{dsplus,eucmplus}*.py`)
+  are **[PolyForm Noncommercial 1.0.0](LICENSE-NONCOMMERCIAL.txt)** — free for research,
+  academic, personal and other noncommercial use **with attribution to Munna-Manoj**;
+  commercial use of DS+/EUCM+ requires a separate license from the author.
+
+SPDX: `MIT AND LicenseRef-PolyForm-Noncommercial-1.0.0`. Please cite via [CITATION.cff](CITATION.cff).

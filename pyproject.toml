@@ -7,7 +7,10 @@ name = "ds_msp"
 version = "0.6.0"
 description = "Double Sphere & multi-model spherical-camera platform: models, calibration, conversion & 3D for wide-FOV lenses"
 readme = "README.md"
-license = "MIT"
+# Dual-licensed: the library is MIT; the DS+ and EUCM+ model implementations
+# (ds_msp/models/{dsplus,eucmplus}*.py) are PolyForm Noncommercial 1.0.0 — see LICENSING.md.
+license = "MIT AND LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "LICENSE-NONCOMMERCIAL.txt"]
 requires-python = ">=3.10"
 authors = [{ name = "Munna-Manoj" }]
 keywords = [
@@ -45,6 +48,9 @@ calib = ["aprilgrid"]
 # fails ("Multiple top-level packages discovered").
 [tool.setuptools.packages.find]
 include = ["ds_msp*"]
+# The multi-camera rig pipeline (ds_msp.rig) is held for the 0.8.0 release pending its
+# real-data validation gate; its source stays in the repo but is excluded from the wheel.
+exclude = ["ds_msp.rig", "ds_msp.rig.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

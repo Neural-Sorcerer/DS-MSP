@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2025-2026 Munna-Manoj. EUCM+ (Extended UCM Plus) camera model, from
+# DS-MSP (https://github.com/Munna-Manoj/DS-MSP). NONCOMMERCIAL use only, with
+# attribution — see LICENSE-NONCOMMERCIAL.txt and LICENSING.md. The rest of DS-MSP is MIT.
 """EUCM+ camera model (EUCM core + division radial + 2-axis tilt) implementing
 the CameraModel contract.
 
