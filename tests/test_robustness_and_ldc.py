@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import cv2
 
@@ -191,3 +192,6 @@ def test_robust_calibration_initialization():
     # Verify PnP estimate is close to GT (should be very close, within 10% translation/rotation)
     t_diff = np.linalg.norm(tvec0.squeeze() - tvec_gt)
     assert t_diff < 0.35, f"PnP initialization pose translation is too far from GT: got {tvec0.squeeze()}, GT={tvec_gt}"
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-INTEROP-002")

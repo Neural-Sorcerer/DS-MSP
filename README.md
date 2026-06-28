@@ -66,7 +66,7 @@ rays approach 90°. DS-MSP implements the models that *can*, and does it careful
 | **Model conversion** | Translate a calibration between models **without images or recalibration** (sample → unproject → LM refit). |
 | **Calibration** | Generic Levenberg–Marquardt bundle adjustment for *any* model, with a robust (Cauchy) loss option. |
 | **Ecosystem fluency** | Read/write **Kalibr** camchain YAML; OpenCV-style drop-in API; **TI Jacinto** LDC hardware mesh export. |
-| **Verified, CI-tested** | 291 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
+| **Verified, CI-tested** | 368 tests + import-linter layer checks + mypy, green on Python 3.10–3.12. |
 
 ---
 
@@ -187,7 +187,7 @@ python examples/03_calibrate_tumvi_aprilgrid.py
 | [`docs/learn/`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/learn/README.md) | The guided curriculum (start here to learn) — Part I (calibration) + Part II (geometry & 3D). |
 | [`docs/`](docs) | [`MULTI_MODEL.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/MULTI_MODEL.md) (multi-model + conversion guide), [`ROADMAP.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/ROADMAP.md), [`WRITING_GUIDE.md`](https://github.com/Munna-Manoj/DS-MSP/blob/main/docs/WRITING_GUIDE.md) (docs style guide). |
 | [`datasets/`](datasets/README.md) | Data guide: what to download, where it goes, how to start. |
-| [`tests/`](tests) | 291 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
+| [`tests/`](tests) | 368 tests (contract suite, analytic-Jacobian gradient checks, calibration, two-view geometry, stereo, manifold optimization). |
 
 The library is **strictly layered** (enforced in CI by import-linter): `core` depends on nothing, the
 service layers depend only on the contract — not on concrete models or each other — and the pure-math

@@ -1,5 +1,6 @@
 """Angular two-view bundle refinement: tightens the algebraic estimate on noisy rays."""
 
+import pytest
 import numpy as np
 
 from ds_msp.mvg import estimate_relative_pose, recover_pose
@@ -129,3 +130,6 @@ def test_estimate_relative_pose_stays_accurate_on_clean_data():
         assert inl.sum() >= 65                              # nearly all rays are inliers
         errs.append(_rot_err_deg(R, Rr))
     assert np.mean(errs) < 0.5
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-MVG-003")

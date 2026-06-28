@@ -1,4 +1,5 @@
 
+import pytest
 import numpy as np
 import cv2
 import sys
@@ -115,3 +116,6 @@ if __name__ == "__main__":
     test_round_trip()
     test_undistort_image()
     print("\nAll tests passed!")
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-INTEROP-001", "NFR-NUM-002")

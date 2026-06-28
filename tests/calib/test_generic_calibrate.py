@@ -89,3 +89,6 @@ def test_ds_calibration_is_self_consistent():
         uv, valid = m.project((R @ Xw.T).T + tvec)
         # reprojection used by the optimizer is sub-pixel
         assert valid.sum() >= 0.9 * v.sum()
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-CALIB-001")

@@ -1,5 +1,6 @@
 """Tests for VO trajectory metrics (Tier 2)."""
 
+import pytest
 import numpy as np
 from scipy.spatial.transform import Rotation
 
@@ -49,3 +50,6 @@ def test_rpe_zero_for_identical_poses_and_scale_invariant_rotation():
     scaled[:, :3, 3] *= 3.0
     _, rot_scaled = rpe_rmse(scaled, poses, delta=1)
     assert rot_scaled < 1e-9
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-VO-002")

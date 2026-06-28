@@ -1,5 +1,6 @@
 """Spherical rectification: a vertical baseline makes epipolar lines vertical meridians."""
 
+import pytest
 import numpy as np
 
 from ds_msp.models import DoubleSphereModel
@@ -49,3 +50,6 @@ def test_rectify_maps_runs_on_a_real_camera():
     mapx, mapy, valid = rectify_maps(cam, R_rect, chart)
     assert mapx.shape == (180, 360) and valid.any()
     assert np.isfinite(mapx[valid]).all()
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-STEREO-002")

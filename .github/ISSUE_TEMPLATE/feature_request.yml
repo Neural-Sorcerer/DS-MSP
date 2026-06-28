@@ -1,0 +1,52 @@
+name: Feature request
+description: Propose a new capability or improvement (maps to a new/changed requirement).
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A feature becomes a requirement in docs/process/srs/requirements.csv. If it is
+        architecturally significant, it will also need an ADR. See the playbooks in
+        docs/process/playbooks/ for the common cases (model, kernel, IO format, capability).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't be done today, and who needs it (stakeholder STK-*)?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should the library do? Public API / interface implications (IFC-*)?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - MODEL
+        - CALIB
+        - RIG
+        - MVG
+        - STEREO
+        - OPS
+        - ADAPT
+        - IO
+        - VO
+        - INTEROP
+        - other / cross-cutting
+    validations:
+      required: true
+  - type: input
+    id: accuracy
+    attributes:
+      label: Accuracy claim (if any)
+      description: If this asserts an accuracy/tolerance, it will need a test — and a realdata test if release-gated.
+      placeholder: e.g. sub-0.3px reprojection on lens X
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

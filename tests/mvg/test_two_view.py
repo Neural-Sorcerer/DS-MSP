@@ -206,3 +206,6 @@ def test_recover_pose_through_a_real_double_sphere_camera():
     assert _rot_err_deg(R, Rhat) < 1e-3          # limited only by project/unproject round-trip
     assert _vec_ang_deg(t, that) < 1e-3
     assert that @ t > 0
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-MVG-001")

@@ -1,5 +1,6 @@
 """Tests for nerfstudio transforms.json I/O."""
 
+import pytest
 import json
 
 import numpy as np
@@ -59,3 +60,6 @@ def test_transforms_json_has_expected_fields(tmp_path):
     assert {"fl_x", "fl_y", "cx", "cy", "k1", "k2", "k3", "k4"} <= set(data)
     assert len(data["frames"]) == 2
     assert np.array(data["frames"][0]["transform_matrix"]).shape == (4, 4)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-IO-003")

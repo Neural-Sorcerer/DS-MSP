@@ -1,0 +1,20 @@
+# Architecture Decision Records `[ADR]`
+
+Immutable records of architecturally significant decisions (ISO/IEC/IEEE 42010 rationale). Each ADR
+is **accepted and frozen at creation** — to change a decision, write a new ADR that *supersedes* the
+old one (the old file stays, with its Status updated to `Superseded by ADR-NNNN`). IDs are
+zero-padded and monotonic (`ADR-NNNN`); CI checks this index stays complete and in order
+(`tools/check_traceability.py`).
+
+| ID | Title | Status | Drivers |
+|----|-------|--------|---------|
+| [ADR-0001](ADR-0001-layered-capability-pipeline.md) | Two-tier layered architecture: capabilities compose into pipelines | Accepted | Composability, acyclic reuse |
+| [ADR-0002](ADR-0002-protocol-camera-models.md) | One `CameraModel` protocol for all interchangeable models | Accepted | Drop-in model substitution |
+| [ADR-0003](ADR-0003-analytic-jacobians.md) | Hand-derived analytic Jacobians, finite-difference-checked (no autodiff) | Accepted | Speed, stability, portability |
+| [ADR-0004](ADR-0004-cv2-scipy-free-foundation.md) | The math foundation is cv2/scipy-free | Accepted | Portable solver path |
+| [ADR-0005](ADR-0005-dsplus-eucmplus.md) | DS⁺ / EUCM⁺ closed-form-invertible camera models | Accepted | Sub-0.3px fit with a closed-form inverse |
+| [ADR-0006](ADR-0006-synthetic-real-release-gate.md) | Synthetic-then-real-data release gate | Accepted | No public release without real-data validation |
+
+> The first six ADRs are **retrofits**: they record decisions already embodied in the codebase, so
+> the governance system is demonstrated against real architecture from day one. Adoption date is the
+> date the record was written, not the date the code first shipped.

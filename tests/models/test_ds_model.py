@@ -3,6 +3,7 @@ DoubleSphereModel unit tests: it must agree with the standalone ds_math and with
 the legacy DoubleSphereCamera, and its conversion seed must be sane.
 """
 
+import pytest
 import numpy as np
 
 from ds_msp.models.double_sphere import DoubleSphereModel
@@ -54,3 +55,6 @@ def test_initialize_seed_is_reasonable():
     lb, ub = DoubleSphereModel.param_bounds()
     assert (seed.params >= lb).all() and (seed.params <= ub).all()
     assert 0.0 <= seed.alpha <= 1.0
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("NFR-NUM-005")

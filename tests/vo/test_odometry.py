@@ -76,3 +76,6 @@ def test_too_few_correspondences_raises():
     frames = [{0: (1.0, 2.0)}, {0: (1.1, 2.1)}]
     with pytest.raises(ValueError, match="correspondences"):
         estimate_trajectory(model, frames)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-VO-001")

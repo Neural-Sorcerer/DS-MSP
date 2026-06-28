@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a defect (behaviour deviates from the spec). Fields follow the IEEE-1044 taxonomy.
+labels: ["defect", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please report numbers, not screenshots — inputs, expected vs actual, and the seed/dataset so
+        the defect is reproducible. See docs/process/management/ISSUE_DEFECT_PROCESS.md.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is wrong, in one or two sentences.
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: Wrong numerical results / regressions / release-blockers are S1.
+      options:
+        - S1 Critical (wrong result on a supported path / data loss / release blocker)
+        - S2 Major (significant function broken, no easy workaround)
+        - S3 Minor (limited impact / workaround exists)
+        - S4 Trivial (cosmetic / docs)
+    validations:
+      required: true
+  - type: input
+    id: component
+    attributes:
+      label: Component (ARC-* / package)
+      placeholder: e.g. ARC-CALIB (ds_msp/calib) or ARC-MODELS (ds_msp/models)
+    validations:
+      required: true
+  - type: dropdown
+    id: defect_type
+    attributes:
+      label: Defect type
+      options:
+        - numerical-accuracy
+        - logic
+        - interface/contract
+        - build/CI
+        - documentation
+        - performance
+        - security
+    validations:
+      required: true
+  - type: input
+    id: requirement
+    attributes:
+      label: Affected requirement(s)
+      placeholder: e.g. FR-CALIB-001, NFR-NUM-001 (if known)
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Minimal code, inputs, the seed/dataset, expected vs actual (with numbers).
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: ds_msp version, Python version, OS
+    validations:
+      required: true

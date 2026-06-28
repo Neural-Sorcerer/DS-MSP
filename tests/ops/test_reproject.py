@@ -89,3 +89,6 @@ def test_reproject_maps_from_a_real_double_sphere_camera():
     # the forward ray (centre of the panorama) lands on the camera's principal point
     cu, cv = chart.width // 2, chart.height // 2
     assert abs(mapx[cv, cu] - cam.cx) < 1.0 and abs(mapy[cv, cu] - cam.cy) < 1.0
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-OPS-002", "NFR-NUM-003")

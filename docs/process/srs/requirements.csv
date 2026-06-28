@@ -1,0 +1,40 @@
+id,type,area,title,arc_ref,code_module,verify_method,status,release_gated
+FR-MODEL-001,FR,MODEL,Project 3D camera-frame points to pixels for every supported camera model,ARC-MODELS,ds_msp/models,tests/contract/test_camera_model_contract.py::test_project_shapes_and_dtypes,implemented,no
+FR-MODEL-002,FR,MODEL,Unproject pixels to unit bearing rays for every supported model,ARC-MODELS,ds_msp/models,tests/contract/test_camera_model_contract.py::test_unproject_shapes_and_unit_norm,implemented,no
+FR-MODEL-003,FR,MODEL,Provide analytic point and parameter projection Jacobians,ARC-MODELS,ds_msp/models,tests/contract/test_gradcheck.py,implemented,no
+FR-MODEL-004,FR,MODEL,Expose all models behind one interchangeable CameraModel contract,ARC-CORE,ds_msp/core/contracts.py,tests/contract/test_camera_model_contract.py::test_satisfies_protocol,implemented,no
+FR-MODEL-005,FR,MODEL,Serialize and deserialize model parameters round-trip,ARC-MODELS,ds_msp/models,tests/contract/test_camera_model_contract.py,implemented,no
+FR-CALIB-001,FR,CALIB,Calibrate intrinsics and per-view extrinsics for any model via bundle adjustment,ARC-CALIB,ds_msp/calib/bundle.py,tests/calib/test_generic_calibrate.py,implemented,yes
+FR-CALIB-002,FR,CALIB,Robust pose resection / PnP seeding on the normalized plane,ARC-GEOMETRY,ds_msp/geometry/resection.py,tests/calib/test_robust_init.py,implemented,no
+FR-CALIB-003,FR,CALIB,Estimate stereo relative pose between two cameras,ARC-CALIB,ds_msp/calib/stereo.py,tests/calib/test_stereo.py,implemented,no
+FR-CALIB-004,FR,CALIB,Detect calibration boards (ChArUco / AprilGrid),ARC-DETECT,ds_msp/detect,tests/calib/test_charuco.py,implemented,no
+FR-RIG-001,FR,RIG,Calibrate a multi-camera rig (intrinsics + extrinsics + object poses),ARC-RIG,ds_msp/rig,tests/rig/test_rig_end2end.py,implemented,yes
+FR-MVG-001,FR,MVG,Recover two-view relative pose and triangulate on bearing vectors,ARC-MVG,ds_msp/mvg/two_view.py,tests/mvg/test_two_view.py,implemented,no
+FR-MVG-002,FR,MVG,Robust two-view pose via RANSAC on Sampson residual,ARC-MVG,ds_msp/mvg/ransac.py,tests/mvg/test_ransac.py,implemented,no
+FR-MVG-003,FR,MVG,Refine two-view pose with angular bundle adjustment,ARC-MVG,ds_msp/mvg/bundle.py,tests/mvg/test_bundle.py,implemented,no
+FR-STEREO-001,FR,STEREO,Compute fisheye stereo depth via sphere sweep,ARC-STEREO,ds_msp/stereo/sphere_sweep.py,tests/stereo/test_sphere_sweep.py,implemented,no
+FR-STEREO-002,FR,STEREO,Spherical epipolar rectification of a stereo pair,ARC-STEREO,ds_msp/stereo/rectify.py,tests/stereo/test_rectify.py,implemented,no
+FR-OPS-001,FR,OPS,Undistort fisheye images and keypoints to a pinhole frame,ARC-OPS,ds_msp/ops/undistort.py,tests/ops/test_ops_polymorphic.py,implemented,no
+FR-OPS-002,FR,OPS,Reproject images across charts (sphere/cylinder/pinhole/cubemap/tangent),ARC-OPS,ds_msp/ops/reproject.py,tests/ops/test_reproject.py,implemented,no
+FR-OPS-003,FR,OPS,Solve PnP on bearing rays for any model,ARC-OPS,ds_msp/ops/pose.py,tests/ops/test_ops_polymorphic.py,implemented,no
+FR-ADAPT-001,FR,ADAPT,Convert calibrated parameters between any two models without images,ARC-ADAPT,ds_msp/adapt/convert.py,tests/adapt/test_convert.py,implemented,no
+FR-ADAPT-002,FR,ADAPT,Automatically select the best-fitting model,ARC-ADAPT,ds_msp/adapt/autoselect.py,tests/adapt/test_autoselect.py,implemented,no
+FR-IO-001,FR,IO,Read and write Kalibr camchain YAML,ARC-IO,ds_msp/io/kalibr.py,tests/io/test_kalibr.py,implemented,no
+FR-IO-002,FR,IO,Export and read COLMAP reconstruction files,ARC-IO,ds_msp/io/colmap.py,tests/io/test_colmap.py,implemented,no
+FR-IO-003,FR,IO,Export nerfstudio transforms.json,ARC-IO,ds_msp/io/nerfstudio.py,tests/io/test_nerfstudio.py,implemented,no
+FR-IO-004,FR,IO,Read and write MC-Calib interchange format,ARC-IO,ds_msp/io/mccalib.py,tests/io/test_mccalib_io.py,implemented,no
+FR-VO-001,FR,VO,Estimate a monocular camera trajectory from a fisheye stream,ARC-VO,ds_msp/vo/odometry.py,tests/vo/test_odometry.py,implemented,no
+FR-VO-002,FR,VO,Evaluate trajectories with Sim(3) alignment and ATE/RPE,ARC-VO,ds_msp/vo/metrics.py,tests/vo/test_metrics.py,implemented,no
+FR-INTEROP-001,FR,INTEROP,Provide an OpenCV-compatible drop-in API,ARC-INTEROP,ds_msp/cv.py,tests/test_ds_camera_cv.py,implemented,no
+FR-INTEROP-002,FR,INTEROP,Generate TI Jacinto LDC distortion-correction mesh,ARC-INTEROP,ds_msp/ldc.py,tests/test_robustness_and_ldc.py,implemented,no
+NFR-NUM-001,NFR,NUM,Analytic Jacobians match finite differences to <=1e-6 relative error,ARC-MODELS,ds_msp/models,tests/contract/test_gradcheck.py,implemented,no
+NFR-NUM-002,NFR,NUM,KB and RadTan models match OpenCV to ~1e-13,ARC-MODELS,ds_msp/models,tests/test_ds_camera_cv.py,implemented,no
+NFR-NUM-003,NFR,NUM,Undistort/reproject round-trip error stays sub-pixel,ARC-OPS,ds_msp/ops/reproject.py,tests/ops/test_reproject.py,implemented,no
+NFR-NUM-004,NFR,NUM,Calibration matches published TUM-VI intrinsics within stated tolerance on real data,ARC-CALIB,ds_msp/calib/bundle.py,tests/realdata/test_tumvi_calibration.py,planned,yes
+NFR-NUM-005,NFR,NUM,Double Sphere handles >180 deg FOV with correct half-space validity,ARC-MODELS,ds_msp/models/double_sphere.py,tests/models/test_ds_model.py,implemented,no
+NFR-ARCH-001,NFR,ARCH,Architecture is strictly layered and acyclic,ARC-CORE,ds_msp,tests/contract/test_independence.py,implemented,no
+NFR-ARCH-002,NFR,ARCH,Math foundation (core/data/geometry/models) is cv2/scipy-free,ARC-CORE,ds_msp,tests/contract/test_independence.py::test_math_foundation_is_cv2_and_scipy_free,implemented,no
+NFR-ARCH-003,NFR,ARCH,Every camera model satisfies the CameraModel contract,ARC-CORE,ds_msp/core/contracts.py,tests/contract/test_camera_model_contract.py,implemented,no
+NFR-PORT-001,NFR,PORT,Library runs on Python 3.10 3.11 and 3.12,ARC-CORE,ds_msp,.github/workflows/ci.yml,implemented,no
+NFR-REPRO-001,NFR,REPRO,Tests and validations are deterministic via fixed seeds,ARC-CORE,tests,tests/contract/test_gradcheck.py,implemented,no
+NFR-PRIV-001,NFR,PRIV,No internal R&D / AI-process content reaches tracked files,ARC-CORE,.,tools/check_tree_hygiene.py,implemented,no

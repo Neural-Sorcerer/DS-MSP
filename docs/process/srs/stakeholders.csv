@@ -1,0 +1,7 @@
+id,name,role,primary_concerns
+STK-01,Library users (SLAM/SfM/robotics researchers),Calibrate fisheye rigs; run VO; export to reconstruction tools,Accuracy; correct wide-FOV geometry; ecosystem interop
+STK-02,Embedded / robotics engineers,Deploy wide-FOV perception; hardware rectification,TI LDC export; real-time pose; portability
+STK-03,Computer-vision practitioners,Interop with Kalibr/COLMAP/nerfstudio; convert between models,IO fidelity; model conversion without re-shooting
+STK-04,Learning practitioners,Learn wide-FOV geometry from runnable curriculum,Clear docs; reproducible examples on small public data
+STK-05,Contributors (human and AI agents),Add models/features under a controlled process,Clear playbooks; traceability; CI gates; DoD
+STK-06,Maintainer / release owner,Govern R&D; gate public releases,No unverified release; no internal-process leakage; auditability

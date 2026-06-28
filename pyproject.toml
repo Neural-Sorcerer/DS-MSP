@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ds_msp"
-version = "0.5.0"
+version = "0.6.0"
 description = "Double Sphere & multi-model spherical-camera platform: models, calibration, conversion & 3D for wide-FOV lenses"
 readme = "README.md"
 license = "MIT"
@@ -51,6 +51,10 @@ testpaths = ["tests"]
 markers = [
     "jac: analytic-Jacobian gradient-check tests (run on every model PR)",
     "contract: model-agnostic contract suite",
+    "slow: long-running statistical tests (e.g. rig model-agnosticism)",
+    "req: link a test to one or more requirement IDs (FR-…/NFR-…) for traceability",
+    "realdata: validation against real datasets (dataset-gated; required pre-release)",
+    "integration: end-to-end multi-component tests",
 ]
 
 [tool.ruff]
@@ -61,7 +65,10 @@ target-version = "py310"
 extend-exclude = ["web"]
 
 [tool.mypy]
-python_version = "3.10"
+# Parse target is 3.12 so mypy can read typeshed/numpy's PEP 695 `type` stubs
+# (mypy 2.1.0 ties `type`-statement parsing to python_version >= 3.12). Real
+# 3.10 runtime compatibility stays enforced by the pytest matrix (3.10/3.11/3.12).
+python_version = "3.12"
 warn_unused_ignores = true
 # Tighten per-module as the typed surface grows; core/ is fully typed.
 [[tool.mypy.overrides]]
@@ -80,11 +87,44 @@ name = "core is the dependency-free foundation"
 type = "forbidden"
 source_modules = ["ds_msp.core"]
 forbidden_modules = [
-    "ds_msp.models", "ds_msp.ops", "ds_msp.adapt",
+    "ds_msp.data", "ds_msp.geometry", "ds_msp.models", "ds_msp.detect",
+    "ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg",
+    "ds_msp.stereo", "ds_msp.rig", "ds_msp.vo",
     "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
 ]
 
 [[tool.importlinter.contracts]]
-name = "service layers are mutually independent"
+name = "data layer depends only on core"
+type = "forbidden"
+source_modules = ["ds_msp.data"]
+forbidden_modules = [
+    "ds_msp.geometry", "ds_msp.models", "ds_msp.detect", "ds_msp.ops",
+    "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo",
+    "ds_msp.rig", "ds_msp.vo", "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
+]
+
+[[tool.importlinter.contracts]]
+name = "geometry layer depends only on core and data"
+type = "forbidden"
+source_modules = ["ds_msp.geometry"]
+forbidden_modules = [
+    "ds_msp.models", "ds_msp.detect", "ds_msp.ops", "ds_msp.adapt",
+    "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo", "ds_msp.rig",
+    "ds_msp.vo", "ds_msp.io", "ds_msp.cv", "ds_msp.ldc",
+]
+
+[[tool.importlinter.contracts]]
+name = "capability services are mutually independent"
 type = "independence"
 modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo"]
+
+[[tool.importlinter.contracts]]
+name = "capabilities never import a pipeline (acyclic)"
+type = "forbidden"
+source_modules = ["ds_msp.ops", "ds_msp.adapt", "ds_msp.calib", "ds_msp.mvg", "ds_msp.stereo"]
+forbidden_modules = ["ds_msp.rig", "ds_msp.vo"]
+
+[[tool.importlinter.contracts]]
+name = "pipelines compose capabilities but stay independent of each other"
+type = "independence"
+modules = ["ds_msp.rig", "ds_msp.vo"]
