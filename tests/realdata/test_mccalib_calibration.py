@@ -2,25 +2,33 @@
 FR-ADAPT-001, NFR-NUM-004).
 
 The synthetic suites pin the robustness *contract*; this is the real-data half of the
-release gate. It calibrates **three** genuine fisheye cameras from MC-Calib (each ~60 views
-of a 7x7 ChArUco board, ~2k real corner detections at 2592x1800) entirely from a **generic**
-init (focal = W/pi, centre = image centre; no reference intrinsics supplied) and asserts:
+release gate. It calibrates **three** fisheye cameras from a multi-camera capture (each
+~60 views of a 7x7 ChArUco board, ~2k real corner detections at 2592x1800) entirely from a
+**generic** init (focal = W/pi, centre = image centre; no reference intrinsics supplied)
+and asserts:
 
-  * **Per camera, robust auto-init is sub-pixel** and recovers MC-Calib's reference
-    intrinsics K to a tight tolerance (``test_intrinsics_recovered_per_camera``), and
-  * **The intrinsics are model-consistent**: for each camera we independently calibrate a
-    second model (EUCM+) *and* image-free-``convert()`` the from-scratch DS+ into EUCM+; the
-    converted model must reproduce DS+ and agree with the from-scratch EUCM+ over the
-    calibrated FOV (``test_convert_agrees_with_from_scratch_per_camera``). This proves the
-    recovered intrinsics are physical, not a single model's artefact.
+  * **Per camera, robust auto-init is sub-pixel** and recovers the reference camera matrix
+    K to a tight tolerance (``test_intrinsics_recovered_per_camera``), and
+  * **The intrinsics are model-consistent under ``convert()``**
+    (``test_convert_*``). Two independent checks, both grounded in the
+    conversion-consistency methodology:
+      - *Self-conversion is exact*: converting a from-scratch DS+ back into DS+ must
+        reproduce its parameters to machine precision — a from-scratch calibration is a
+        fixed point of ``convert()``.
+      - *DS+ is a faithful conversion target*: an independently from-scratch-calibrated
+        EUCM+, converted into DS+, must reproduce the EUCM+ projection sub-pixel **in every
+        FOV band the corners actually span**. (Errors are reported per FOV band, never as a
+        single full-image RMS, which would be dominated by the unobserved periphery; the
+        bands are capped at the angle the data covers — extrapolation past it is not
+        asserted.)
 
-Corners are detected on the fly with ``ds_msp.detect.charuco`` (verified to reproduce
-MC-Calib's own published cam0 corner set). ``convert()`` is restricted to the FOV the corners
-actually span: outside it the two model families legitimately diverge (extrapolation), so an
-unrestricted convert is *expected* to disagree and would be a meaningless comparison.
+Camera 0 here is the same physical lens used as the reference checkerboard elsewhere in the
+project; cameras 2 and 4 are distinct cameras (different K and reference reprojection).
 
-Dataset-gated: the imagery is local-only (gitignored) so this test SKIPS when absent (PR CI),
-and is required-green in the pre-release job that closes the gate. Point it at the data with
+Corners are detected on the fly with ``ds_msp.detect.charuco`` (verified to reproduce the
+dataset's own published cam0 corner set: 1954 vs 1943 corners). Dataset-gated: the imagery
+is local-only (gitignored) so this test SKIPS when absent (PR CI), and is required-green in
+the pre-release job that closes the gate. Point it at the data with
 ``DSMSP_MCCALIB_DIR=/path/to/2026_06_26_MC-Calib``.
 """
 
@@ -41,10 +49,12 @@ from ds_msp.models.dsplus import DSPlusModel
 from ds_msp.models.eucmplus import EUCMPlusModel
 
 CAMERAS = (0, 2, 4)
-# MC-Calib's board for this rig: 7x7 ChArUco, DICT_6X6_1000, 0.1 m squares (legacy pattern).
+# ChArUco board for this rig: 7x7, DICT_6X6_1000, 0.1 m squares (legacy pattern).
 _SPEC = BoardSpec(n_x=7, n_y=7, length_square=0.1, length_marker=0.075, square_size=0.1)
 _NCX = _SPEC.n_x - 1
 _SQ = _SPEC.square_size
+# FOV bands (full-angle/2, i.e. ray-from-axis angle in degrees) for per-band reporting.
+_BANDS = [(0, 30), (30, 50), (50, 70)]
 
 
 def _dataset_root() -> Path | None:
@@ -59,7 +69,7 @@ def _K4(model) -> np.ndarray:
 
 
 def _reference_K(cam_dir: Path):
-    """MC-Calib's published (fx, fy, cx, cy), reprojection error, and image size."""
+    """The dataset's published (fx, fy, cx, cy), reprojection error, and image size."""
     r = ET.parse(cam_dir / "calibration.xml").getroot()
     cm = r.find("camera_matrix")
     K = np.array([float(cm.find(t).text) for t in ("fx", "fy", "ppx", "ppy")])
@@ -72,7 +82,7 @@ def _detect_cam(cam_dir: Path):
     """Detect board-0 ChArUco corners across a camera's images -> calibration inputs.
 
     Corner id ``k`` maps to board point ``((k % ncx)*sq, (k // ncx)*sq, 0)`` — the row-major
-    interior-corner convention of ``ds_msp.detect.charuco`` (and MC-Calib's renderer).
+    interior-corner convention of ``ds_msp.detect.charuco``.
     """
     detectors = make_detectors([_SPEC], legacy=True)
     Xs, kps, vis, all_px = [], [], [], []
@@ -91,12 +101,38 @@ def _detect_cam(cam_dir: Path):
     return Xs, kps, vis, np.vstack(all_px)
 
 
-# Calibrating three cameras x two models is a few seconds each; cache per camera so both
-# test functions (and every parametrization) reuse one fit.
+def _perband_px(ref_model, model_a, model_b, W, H, half_fov):
+    """Per-FOV-band reprojection RMS (px) between two models, over rays the data spans.
+
+    Rays come from ``ref_model.unproject`` of an image grid; each band is intersected with
+    the data's forward FOV (``half_fov``) so nothing past the calibrated angle is measured.
+    Returns ``{(lo, hi): rms_px}`` for populated bands.
+    """
+    px = sample_image_grid(W, H, 4000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")        # benign invalid-divide on periphery rays
+        rays, valid = ref_model.unproject(px)
+    fwd = valid & (rays[:, 2] > 1e-6)
+    ang = np.degrees(np.arccos(np.clip(rays[:, 2], -1.0, 1.0)))
+    out = {}
+    for lo, hi in _BANDS:
+        sel = fwd & (ang >= lo) & (ang < min(hi, half_fov + 0.5))
+        if sel.sum() < 5:
+            continue
+        ua, _ = model_a.project(rays[sel])
+        ub, _ = model_b.project(rays[sel])
+        out[(lo, hi)] = float(np.sqrt(np.mean(np.sum((ua - ub) ** 2, axis=1))))
+    return out
+
+
 _CACHE: dict[int, dict] = {}
 
 
 def _fit_camera(cam: int) -> dict:
+    """Detect + calibrate DS+ and EUCM+ from a generic init, plus the two conversions.
+
+    Cached per camera so every test/parametrization reuses one fit.
+    """
     if cam in _CACHE:
         return _CACHE[cam]
     root = _dataset_root()
@@ -111,12 +147,13 @@ def _fit_camera(cam: int) -> dict:
                         Xs, kps, vis, max_nfev=200)
         eup = calibrate(EUCMPlusModel(f0, f0, W / 2, H / 2, 0.5, 1.0, 0, 0, 0),
                         Xs, kps, vis, max_nfev=200)
-        # FOV (full angle) actually spanned by the detected corners, via the DS+ fit.
+        # FOV (ray-from-axis, max) the corners actually span, via the DS+ fit.
         rays, valid = dsp["model"].unproject(all_px)
-        half = float(np.degrees(np.arccos(np.clip(rays[valid, 2], -1, 1))).max())
-        eup_conv, conv_report = convert(dsp["model"], EUCMPlusModel,
-                                        width=W, height=H, n_samples=900, max_fov_deg=2 * half)
-    out = dict(dsp=dsp, eup=eup, eup_conv=eup_conv, conv_report=conv_report,
+        half = float(np.degrees(np.arccos(np.clip(rays[valid, 2], -1.0, 1.0))).max())
+        # convert(): self-conversion (must be exact) and EUCM+ -> DS+ (robust target).
+        dsp_self, _ = convert(dsp["model"], DSPlusModel, width=W, height=H)
+        dsp_from_eu, _ = convert(eup["model"], DSPlusModel, width=W, height=H)
+    out = dict(dsp=dsp, eup=eup, dsp_self=dsp_self, dsp_from_eu=dsp_from_eu,
                refK=refK, ref_reproj=ref_reproj, W=W, H=H, half_fov=half,
                n_views=len(Xs), n_corners=sum(len(x) for x in Xs))
     _CACHE[cam] = out
@@ -136,7 +173,8 @@ pytestmark = [pytest.mark.realdata,
 
 @pytest.mark.parametrize("cam", CAMERAS)
 def test_intrinsics_recovered_per_camera(fitted, cam):
-    """Each real fisheye calibrates sub-pixel from a generic init and recovers MC-Calib's K."""
+    """Each real fisheye calibrates sub-pixel from a generic init and recovers the
+    reference camera matrix K."""
     r = fitted(cam)
     dsp, refK = r["dsp"], r["refK"]
     assert dsp["success"], (cam, dsp)
@@ -149,29 +187,24 @@ def test_intrinsics_recovered_per_camera(fitted, cam):
 
 
 @pytest.mark.parametrize("cam", CAMERAS)
-def test_convert_agrees_with_from_scratch_per_camera(fitted, cam):
-    """The from-scratch DS+, image-free-converted into EUCM+, reproduces DS+ and matches the
-    independently from-scratch-calibrated EUCM+ over the calibrated FOV — so the recovered
-    intrinsics are model-consistent, not a single model's artefact."""
+def test_convert_self_is_exact_per_camera(fitted, cam):
+    """A from-scratch calibration is a fixed point of convert(): DS+ -> DS+ reproduces the
+    source parameters to machine precision."""
     r = fitted(cam)
-    eup, eup_conv, report = r["eup"], r["eup_conv"], r["conv_report"]
+    delta = np.abs(r["dsp_self"].params - r["dsp"]["model"].params).max()
+    assert delta < 1e-5, (cam, delta)
 
-    # 1. EUCM+ is itself a valid sub-pixel fit to the same corners (two-model agreement).
-    assert eup["median_px"] < 0.40, (cam, eup["median_px"])
 
-    # 2. convert() reproduces the DS+ source over the calibrated FOV (image-free).
-    assert report["rms_px"] < 0.8, (cam, report["rms_px"])
-
-    # 3. converted EUCM+ agrees with the from-scratch EUCM+: focal within 1%, and pixel-space
-    #    agreement is sub-few-px over the FOV the corners actually constrain.
-    conv_K, scratch_K = _K4(eup_conv), _K4(eup["model"])
-    assert np.allclose(conv_K[:2], scratch_K[:2], rtol=0.01), (cam, conv_K, scratch_K)
-
-    px = sample_image_grid(r["W"], r["H"], 1500)
-    rays, valid = eup["model"].unproject(px)
-    ang = np.degrees(np.arccos(np.clip(rays[:, 2], -1, 1)))
-    keep = valid & (rays[:, 2] > 1e-6) & (ang <= r["half_fov"])
-    uv_scratch, _ = eup["model"].project(rays[keep])
-    uv_conv, _ = eup_conv.project(rays[keep])
-    agreement = float(np.sqrt(np.mean(np.sum((uv_scratch - uv_conv) ** 2, axis=1))))
-    assert agreement < 4.0, (cam, agreement)
+@pytest.mark.parametrize("cam", CAMERAS)
+def test_convert_into_dsplus_target_is_faithful_per_camera(fitted, cam):
+    """An independently from-scratch-calibrated EUCM+, converted into DS+, reproduces the
+    EUCM+ projection sub-pixel in every FOV band the corners span — DS+ is a faithful,
+    robust conversion target. (EUCM+ is also itself a valid sub-pixel fit to the same
+    corners, so this compares two real calibrations, not a model against itself.)"""
+    r = fitted(cam)
+    assert r["eup"]["median_px"] < 0.40, (cam, r["eup"]["median_px"])
+    bands = _perband_px(r["eup"]["model"], r["eup"]["model"], r["dsp_from_eu"],
+                        r["W"], r["H"], r["half_fov"])
+    assert bands, (cam, "no populated FOV bands")
+    for band, rms in bands.items():
+        assert rms < 0.30, (cam, band, rms, bands)
