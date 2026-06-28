@@ -3,6 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.testmondata
+.pytest_cache/
+.coverage
 .Python
 env/
 venv/
