@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from ..calib.bundle import calibrate as _calibrate_single
-from ..calib.robust_init import intrinsics_seed, ransac_pnp_normalized
+from ..geometry.resection import intrinsics_seed, ransac_pnp_normalized
 from ..core.contracts import CameraModel
 from ..models.radtan import RadTanModel
 from . import ba
