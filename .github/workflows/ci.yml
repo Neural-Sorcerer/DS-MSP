@@ -29,6 +29,21 @@ jobs:
         # the typed surface expands over time (see pyproject [tool.mypy]).
         run: mypy ds_msp/core --follow-imports=silent --ignore-missing-imports
 
+  governance:
+    name: governance (traceability + tree hygiene)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Both checkers are pure standard library on purpose — no install step, so this
+      # gate is fast and cannot break on dependency drift. See docs/process/.
+      - name: traceability (requirements <-> tests <-> ADRs in sync)
+        run: python tools/check_traceability.py --check
+      - name: tree hygiene (no tracked local-only / leak content)
+        run: python tools/check_tree_hygiene.py
+
   test:
     name: tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest

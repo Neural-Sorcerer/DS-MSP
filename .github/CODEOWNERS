@@ -1,0 +1,18 @@
+# Code owners — automatically requested for review on matching paths.
+# The governance system and its enforcement are owner-reviewed so the process
+# cannot be changed without the maintainer's sign-off.
+
+# Default owner for everything.
+*                                   @Munna-Manoj
+
+# Governance: process docs, requirements/architecture registries, ADRs, and the
+# CI checkers that enforce them.
+/docs/process/                      @Munna-Manoj
+/docs/process/architecture/decisions/ @Munna-Manoj
+/tools/check_traceability.py        @Munna-Manoj
+/tools/check_tree_hygiene.py        @Munna-Manoj
+
+# CI/CD and release configuration.
+/.github/                           @Munna-Manoj
+/pyproject.toml                     @Munna-Manoj
+/release-please-config.json         @Munna-Manoj
