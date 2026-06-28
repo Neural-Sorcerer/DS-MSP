@@ -68,8 +68,10 @@ def test_robust_loss_resists_outliers_better_than_l2():
         idx = rng.choice(len(uv), size=10, replace=False)
         uv[idx] += rng.uniform(-25, 25, (10, 2))
     init = KannalaBrandtModel(340, 340, 320, 240, 0.0, 0.0, 0.0, 0.0)
-    l2 = calibrate(init, Xs, kps, vis, max_nfev=150)
-    rob = calibrate(init, Xs, kps, vis, max_nfev=150, loss="cauchy", f_scale=1.0)
+    # Pin plain L2 explicitly for the baseline: calibrate() is now robust-by-default, so a
+    # no-loss call would itself down-weight the outliers and the comparison would be moot.
+    l2 = calibrate(init, Xs, kps, vis, max_nfev=150, robust="none")
+    rob = calibrate(init, Xs, kps, vis, max_nfev=150)   # default: cauchy + MAD auto-scale + GNC
     err_l2 = abs(l2["model"].K[0, 0] - truth.K[0, 0])
     err_rob = abs(rob["model"].K[0, 0] - truth.K[0, 0])
     assert err_rob < err_l2          # robust loss is less biased by the outliers

@@ -30,7 +30,7 @@ def bundle_adjust(model_cls,
                   X_world_list: Sequence[np.ndarray],
                   keypoints_list: Sequence[np.ndarray],
                   visibility_list: Sequence[np.ndarray],
-                  *, kernel: str = "none", scale: float = 1.0,
+                  *, kernel: str = "none", scale: "float | str" = 1.0,
                   gnc_start: float = 0.0, gnc_iters: int = 0,
                   max_iter: int = 200) -> Tuple[np.ndarray, np.ndarray, np.ndarray, OptResult]:
     """Refine ``model_cls`` intrinsics + per-image poses from seeded extrinsics.
