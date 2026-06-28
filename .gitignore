@@ -27,30 +27,26 @@ verification_output/
 datasets/*
 !datasets/README.md
 
-# Personal job-hunt strategy notes (kept local, not for the public repo).
+# Local-only working notes (kept out of the public repo).
 CAREER_ROADMAP.md
 
-# Claude Code / AI authoring setup (LOCAL-ONLY, never committed).
-# The agent pipeline and orchestration we use to *help build* DS-MSP are background
-# tooling — not part of the library or its public docs. Keep them out entirely.
+# Local-only authoring/tooling config — never committed.
 .claude/
-# The doc-quality rubric the agents enforce names that pipeline, so it stays local too.
-# (The public-facing writing standard is docs/WRITING_GUIDE.md.)
-docs/research/doc_excellence_spec.md
-
-# AI R&D process environment (LOCAL-ONLY, versioned in its OWN private git repo).
-# `.ai/` holds the stage-gated R&D framework, the dedicated research/math/optimization
-# agents+skills (canonical source), decision records, experiment logs, and upstream-
-# codebase knowledge — the "how we drive the AI" layer. Kept out of the shared code repo
-# so developers never see our AI-guided process or artifacts. Synced into .claude/ via
-# `.ai/sync.sh`; the local CLAUDE.local.md orchestration pointer stays out too.
 .ai/
+CLAUDE.md
 CLAUDE.local.md
 
-# Simulation / rendering studio (LOCAL-ONLY, never committed to this repo).
-# It has its own local git repo and heavy viz dependencies (matplotlib, manim, …).
-# RULE: the studio generates visual assets; only its OUTPUT (copied into assets/)
-# lands here. The generator code and its deps stay out of GitHub entirely.
+# Internal R&D and planning docs (kept local, never published).
+docs/research/
+docs/MULTI_MODEL_ADAPTER_PLAN.md
+docs/MULTI_MODEL_DEV_PROCESS.md
+docs/RIG_IMPROVEMENT_SURVEY.md
+
+# Local calibration datasets (large; downloaded/produced locally, never committed).
+2026_*_MC-Calib/
+
+# Local-only rendering scripts and their heavy viz dependencies; only their committed
+# output (under assets/) belongs in this repo.
 /simulations/
 
 # Local detection/repro experiments (use datasets, not shipped).
