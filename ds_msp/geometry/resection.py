@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2025-2026 Munna-Manoj. Robust from-scratch intrinsic seed + RANSAC
+# resection — part of the DS-MSP robust calibration engine
+# (https://github.com/Munna-Manoj/DS-MSP). NONCOMMERCIAL use only, with attribution —
+# see LICENSE-NONCOMMERCIAL.txt and LICENSING.md. The rest of DS-MSP is MIT.
 """From-scratch robust intrinsic seed + RANSAC PnP (pure NumPy, no OpenCV).
 
 Why this exists

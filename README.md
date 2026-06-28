@@ -650,10 +650,12 @@ This project builds on excellent open-source work and research.
 
 **Dual-licensed** (see [LICENSING.md](LICENSING.md)):
 
-- The library is **[MIT](LICENSE)** — free for any use, including commercial.
-- The **DS+** and **EUCM+** model implementations (`ds_msp/models/{dsplus,eucmplus}*.py`)
-  are **[PolyForm Noncommercial 1.0.0](LICENSE-NONCOMMERCIAL.txt)** — free for research,
-  academic, personal and other noncommercial use **with attribution to Munna-Manoj**;
-  commercial use of DS+/EUCM+ requires a separate license from the author.
+- The generic library is **[MIT](LICENSE)** — free for any use, including commercial
+  (standard KB/DS/UCM/EUCM/RadTan models, geometry, I/O, detection, evaluation).
+- The project's core contribution is **[PolyForm Noncommercial 1.0.0](LICENSE-NONCOMMERCIAL.txt)** —
+  the **DS+/EUCM+** models (`ds_msp/models/{dsplus,eucmplus}*.py`) **and** the robust from-scratch
+  calibration/conversion engine (`ds_msp/geometry/resection.py`, `ds_msp/calib/bundle.py`,
+  `ds_msp/adapt/convert.py`) — free for research, academic, personal and other noncommercial use
+  **with attribution to Munna-Manoj**; commercial use requires a separate license from the author.
 
 SPDX: `MIT AND LicenseRef-PolyForm-Noncommercial-1.0.0`. Please cite via [CITATION.cff](CITATION.cff).

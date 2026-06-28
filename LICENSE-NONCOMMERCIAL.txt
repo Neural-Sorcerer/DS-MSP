@@ -1,13 +1,18 @@
-DS-MSP — Noncommercial license for the DS+ and EUCM+ camera models
-==================================================================
+DS-MSP — Noncommercial license for the Plus camera models and the robust
+calibration/conversion engine
+========================================================================
 
-SCOPE. This license applies ONLY to the Double Sphere Plus (DS+) and Extended
-Unified Camera Model Plus (EUCM+) implementations, namely the files:
+SCOPE. This license applies ONLY to (a) the Double Sphere Plus (DS+) and
+Extended Unified Camera Model Plus (EUCM+) implementations and (b) the robust
+from-scratch calibration / model-conversion engine, namely the files:
 
     ds_msp/models/dsplus.py
     ds_msp/models/dsplus_math.py
     ds_msp/models/eucmplus.py
     ds_msp/models/eucmplus_math.py
+    ds_msp/geometry/resection.py      (robust intrinsic seed + RANSAC resection)
+    ds_msp/calib/bundle.py            (robust auto-initialized calibrate())
+    ds_msp/adapt/convert.py           (robust image-free model conversion)
 
 Everything else in DS-MSP is licensed under the MIT License (see LICENSE).
 For how the two licenses fit together, and how to obtain a commercial license
@@ -22,7 +27,7 @@ use requires a separate license from the author.
 Required Notice (must be preserved and passed along, per the "Notices" section):
 
     Required Notice: Copyright (c) 2025-2026 Munna-Manoj.
-    DS+ (Double Sphere Plus) and EUCM+ (Extended UCM Plus) camera models,
+    DS+ / EUCM+ camera models and the robust calibration/conversion engine,
     from DS-MSP (https://github.com/Munna-Manoj/DS-MSP), by Munna-Manoj.
     Any use must credit the author "Munna-Manoj" and this repository.
 
