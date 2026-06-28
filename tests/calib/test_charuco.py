@@ -71,3 +71,7 @@ def test_parity_vs_mccalib_keypoints():
              for f in set(mc) & set(mine) for r in set(mc[f]) & set(mine[f])]
     assert len(diffs) > 300
     assert np.median(diffs) < 0.1 and np.max(diffs) < 1.0
+
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-CALIB-004")

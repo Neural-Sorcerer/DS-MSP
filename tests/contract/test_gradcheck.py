@@ -53,3 +53,6 @@ def test_project_jacobian_strict(factory):
 def test_so3_right_jacobian_strict():
     r = gradcheck_retraction(rel_tol=REL_TOL)
     assert r["ok"], f"so3 right-Jacobian rel_err={r['rel_err']:.2e} (tol {REL_TOL:.0e})"
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-MODEL-003", "NFR-NUM-001", "NFR-REPRO-001")

@@ -72,3 +72,6 @@ def test_ucm_omni_xi_mapping_roundtrips(tmp_path):
     assert block["camera_model"] == "omni"
     back = from_kalibr_cam(block)
     assert np.isclose(back.alpha, 0.62)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-IO-001")

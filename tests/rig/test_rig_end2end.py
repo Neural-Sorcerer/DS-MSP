@@ -1,5 +1,6 @@
 """End-to-end synthetic rig: calibrate_rig must recover known extrinsics."""
 
+import pytest
 import numpy as np
 
 from ds_msp.rig import ba, calibrate_rig
@@ -42,3 +43,6 @@ def test_recovers_extrinsics_with_noise():
         / np.linalg.norm(_rel(gt[ref], gt[c])[:3, 3])
         for c in rig.T_c_g if c != ref)
     assert worst < 0.02
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-RIG-001")

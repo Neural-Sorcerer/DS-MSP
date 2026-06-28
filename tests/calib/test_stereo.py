@@ -50,3 +50,6 @@ def test_relative_pose_error_basic():
 def test_mismatched_lengths_raise():
     with pytest.raises(ValueError):
         estimate_relative_pose([(np.zeros(3), np.zeros(3))], [])
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-CALIB-003")

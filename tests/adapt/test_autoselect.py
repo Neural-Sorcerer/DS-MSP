@@ -6,6 +6,7 @@ held by the Double Sphere / UCM family at *any* parameters. ``convert_best`` mus
 escalate model capacity until the reprojection RMS clears the tolerance.
 """
 
+import pytest
 import numpy as np
 
 from ds_msp.adapt import convert, convert_best
@@ -62,3 +63,6 @@ def test_multistart_never_worse_than_single_start():
     _, rep_multi = convert(INFLECTED_KB, DoubleSphereModel, width=W, height=H,
                            n_samples=1500, n_restarts=6)
     assert rep_multi["rms_px"] <= rep_single["rms_px"] + 1e-6
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-ADAPT-002")

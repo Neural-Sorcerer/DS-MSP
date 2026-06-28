@@ -78,3 +78,6 @@ def test_per_camera_models_and_mccalib_writer_roundtrip(tmp_path):
         assert np.allclose(cams[c].pose, np.linalg.inv(rig.T_c_g[c]), atol=1e-6)
     # distortion_vector length is model-specific (radtan 5, ds 2, ucm 1)
     assert len(cams[0].dist) == 5 and len(cams[1].dist) == 2 and len(cams[2].dist) == 1
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-IO-004")

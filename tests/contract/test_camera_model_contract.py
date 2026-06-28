@@ -143,3 +143,6 @@ def test_batch_shape_preserved(model):
     uv, valid = model.project(P)
     assert uv.shape == (3, 4, 2)
     assert valid.shape == (3, 4)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-MODEL-001", "FR-MODEL-002", "FR-MODEL-004", "FR-MODEL-005", "NFR-ARCH-003")

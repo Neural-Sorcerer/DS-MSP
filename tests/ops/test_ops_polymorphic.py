@@ -77,3 +77,6 @@ def test_ops_match_legacy_ds_camera():
     mapx_b, mapy_b, _ = cam.get_undistortion_maps(K_b)
     assert np.allclose(mapx_a, mapx_b, atol=1e-3)
     assert np.allclose(mapy_a, mapy_b, atol=1e-3)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-OPS-001", "FR-OPS-003")

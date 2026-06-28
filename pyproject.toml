@@ -52,6 +52,9 @@ markers = [
     "jac: analytic-Jacobian gradient-check tests (run on every model PR)",
     "contract: model-agnostic contract suite",
     "slow: long-running statistical tests (e.g. rig model-agnosticism)",
+    "req: link a test to one or more requirement IDs (FR-…/NFR-…) for traceability",
+    "realdata: validation against real datasets (dataset-gated; required pre-release)",
+    "integration: end-to-end multi-component tests",
 ]
 
 [tool.ruff]

@@ -4,6 +4,7 @@ assertions, and a Fake -> Fake identity (RE ~ 0) proving the converter runs with
 no fisheye model present.
 """
 
+import pytest
 import numpy as np
 
 from ds_msp.adapt import convert, sample_image_grid
@@ -82,3 +83,6 @@ def test_converter_is_decoupled_from_concrete_models():
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
     assert not any("models" in m for m in imported), imported
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-ADAPT-001")

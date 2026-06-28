@@ -93,3 +93,6 @@ def test_pose_count_mismatch_raises(tmp_path):
     cam = KannalaBrandtModel(190.0, 190.0, 255.0, 255.0, 0.0, 0.0, 0.0, 0.0)
     with pytest.raises(ValueError, match="differ"):
         export_colmap(str(tmp_path), cam, 512, 512, _make_poses(3), ["a.png", "b.png"])
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-IO-002")

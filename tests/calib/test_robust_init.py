@@ -79,3 +79,7 @@ def test_resection_returns_none_when_underdetermined():
     uv = np.random.default_rng(1).uniform(0, W, size=(5, 2))
     P, inl = ransac_resection(X, uv)
     assert P is None and not inl.any()
+
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-CALIB-002")

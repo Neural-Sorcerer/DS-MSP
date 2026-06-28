@@ -81,3 +81,6 @@ def test_sweep_to_points_back_projects_consistently(cam):
     # each point sits at its depth along the corresponding ray (positive, finite)
     assert np.isfinite(pts).all()
     assert np.linalg.norm(pts, axis=1).min() > 0
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-STEREO-001")

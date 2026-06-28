@@ -209,3 +209,6 @@ def test_module_imports_in_isolation(module):
     r = subprocess.run([sys.executable, "-c", f"import {module}"],
                        capture_output=True, text=True)
     assert r.returncode == 0, f"isolated import of {module} failed:\n{r.stderr}"
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("NFR-ARCH-001", "NFR-ARCH-002")

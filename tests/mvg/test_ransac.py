@@ -109,3 +109,6 @@ def test_ransac_too_few_correspondences_raises():
     f = np.eye(3)[:5]
     with pytest.raises(ValueError, match="≥8"):
         ransac_relative_pose(f, f)
+
+# Traceability: links this suite to the requirement(s) it verifies.
+pytestmark = pytest.mark.req("FR-MVG-002")
