@@ -1,53 +1,50 @@
 #!/usr/bin/env python3
 """Tracked-tree structural hygiene gate (pure stdlib, CI-safe).
 
-Fails if any tracked file would expose local-only working areas. It encodes ONLY
-structural/path rules that are already public in ``.gitignore`` (so this script reveals
-nothing sensitive and is safe to ship in the repo). The richer semantic denylist of
-internal codenames stays in a local, unpublished pre-push guard — defense in depth.
+Fails if any *tracked* file is also matched by the repo's ignore rules — i.e. content that
+is meant to stay local (declared in ``.gitignore``) has been committed. The set of
+local-only paths is defined solely by ``.gitignore`` (the standard mechanism for declaring
+them); this script enumerates none of them itself, so it reveals nothing and is safe to
+ship. New local-only entries added to ``.gitignore`` are covered automatically.
+
+The richer *semantic* denylist of internal codenames lives in a separate, local-only
+pre-push guard — defense in depth.
 
 Run in CI on every PR:  python tools/check_tree_hygiene.py
 """
 
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 
-# Path patterns that must never appear among tracked files. All of these directory/file
-# names are already declared in the public .gitignore, so listing them here leaks nothing.
-FORBIDDEN_PATH = [
-    (re.compile(r"(^|/)\.ai/"), "local R&D working area .ai/"),
-    (re.compile(r"(^|/)\.claude/"), "local tooling .claude/"),
-    (re.compile(r"(^|/)CLAUDE\.md$"), "local CLAUDE.md"),
-    (re.compile(r"(^|/)CLAUDE\.local\.md$"), "local CLAUDE.local.md"),
-    (re.compile(r"(^|/)CAREER_ROADMAP\.md$"), "local CAREER_ROADMAP.md"),
-    (re.compile(r"(^|/)docs/research/"), "local docs/research/"),
-    (re.compile(r"(^|/)simulations/"), "local simulations/"),
-]
-# Absolute home paths leaking into tracked content are also forbidden.
-FORBIDDEN_PATH.append((re.compile(r"(^|/)Users/"), "absolute /Users/ path as a tracked file"))
 
-
-def tracked_files() -> list[str]:
-    out = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True)
-    return [ln for ln in out.stdout.splitlines() if ln.strip()]
+def _git(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], capture_output=True, text=True, input=stdin)
 
 
 def main() -> int:
-    violations = []
-    for path in tracked_files():
-        for rx, why in FORBIDDEN_PATH:
-            if rx.search(path):
-                violations.append(f"{path}  ({why})")
-                break
+    tracked = [ln for ln in _git("ls-files").stdout.splitlines() if ln.strip()]
+    if not tracked:
+        print("TREE HYGIENE: OK (no tracked files)")
+        return 0
+
+    # A tracked file that the ignore rules would match is a breach: local-only content has
+    # been committed. `--no-index` makes check-ignore evaluate the rules even for paths that
+    # are already tracked (tracking would otherwise mask them). Exit code: 0 = some matched,
+    # 1 = none matched, >1 = error.
+    res = _git("check-ignore", "--no-index", "--stdin", stdin="\n".join(tracked) + "\n")
+    if res.returncode > 1:
+        print(f"TREE HYGIENE: ERROR running git check-ignore:\n{res.stderr}", file=sys.stderr)
+        return 2
+    violations = sorted({ln.strip() for ln in res.stdout.splitlines() if ln.strip()})
+
     if violations:
-        print("TREE HYGIENE: FAIL — local-only paths are tracked:")
+        print("TREE HYGIENE: FAIL — local-only (git-ignored) paths are tracked:")
         for v in violations:
             print(f"  - {v}")
         return 1
-    print("TREE HYGIENE: OK")
+    print(f"TREE HYGIENE: OK ({len(tracked)} tracked files, none git-ignored)")
     return 0
 
 

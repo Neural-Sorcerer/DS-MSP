@@ -29,10 +29,15 @@ Builds and publishes the documentation site.
 
 ## The release gate
 
-A release of any **release-gated** requirement (FR-CALIB-001, FR-RIG-001, NFR-NUM-004) requires the
-pre-release / nightly validation job — which runs the `realdata` tests against real datasets — to be
-green, and `check_traceability.py --release` to pass. `realdata` tests are dataset-gated and skipped in
-ordinary PR CI to keep PRs fast (ADR-0006).
+The policy (ADR-0006): a release of any **release-gated** requirement (FR-CALIB-001, FR-RIG-001,
+NFR-NUM-004) requires both `tools/check_traceability.py --release` to pass **and** the `realdata` tests
+to be green against real datasets. `realdata` tests are dataset-gated and skipped in ordinary PR CI to
+keep PRs fast.
+
+Status: the `--release` traceability check is available today and is run as part of the release
+checklist. The automated **pre-release / nightly validation job** that runs the `realdata` suite is
+**planned, not yet wired** (RSK-07); until it exists the real-data validation is performed manually
+before a release-gated release.
 
 ## Lifecycle mapping (ISO/IEC/IEEE 12207)
 

@@ -48,12 +48,18 @@ PyPI OIDC publish succeeds (ADR-0006, CON-07).
   not a single global percentage. Numerical claims (accuracy, tolerances) are backed by an asserting
   test, never by prose alone.
 
-## 5. The release gate (machine-enforced)
+## 5. The release gate
 
-No release-gated requirement may ship without a green synthetic **and** a green real-data test. This
-is enforced two ways: `check_traceability.py --release` fails if coverage is missing, and the
-pre-release validation job must be green before release-please publishes. See ADR-0006 and
-[CHANGE_RELEASE_MGMT.md](../management/CHANGE_RELEASE_MGMT.md).
+The policy: no release-gated requirement may ship without a green synthetic **and** a green real-data
+test. This is enforced two ways, one active and one planned:
+
+- **Active:** `tools/check_traceability.py --release` fails if a release-gated requirement lacks
+  `realdata` coverage (run it before cutting a release).
+- **Planned (RSK-07):** a pre-release / nightly validation job that runs the `realdata` suite against
+  real datasets and must be green before release-please publishes. This job is **not yet wired** — until
+  it is, the real-data validation is run manually as part of the release checklist.
+
+See ADR-0006 and [CHANGE_RELEASE_MGMT.md](../management/CHANGE_RELEASE_MGMT.md).
 
 ## 6. Internal verification protocol (high-risk changes)
 

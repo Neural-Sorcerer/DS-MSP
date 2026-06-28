@@ -28,9 +28,11 @@ still reducing it.
 - **RSK-01 / RSK-02** are the focus of the in-flight robust auto-calibration work; they move to
   *mitigated* when the real-data validation (NFR-NUM-004) is green and the planted-flip / multi-start
   tests are in CI. Until then the release gate (ADR-0006) prevents shipping an unvalidated calibrator.
-- **RSK-06 / RSK-07** become *mitigated* once the `governance` CI job is active on `main` and the
-  pre-release validation job is wired — the controls exist (the checkers); they need to be enforced in
-  the pipeline.
+- **RSK-06** — the `governance` CI job (which runs `check_traceability.py --check`) is wired in
+  `ci.yml`; it moves to *mitigated* once it has run on `main` via the bootstrap merge.
+- **RSK-07** stays *planned* until the pre-release real-data validation job is added; the
+  `check_traceability.py --release` check exists, but the automated job that runs the `realdata` suite
+  is not yet wired (until then, real-data validation is a manual release-checklist step).
 
 ## Maintenance
 
