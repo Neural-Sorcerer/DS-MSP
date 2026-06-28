@@ -67,7 +67,13 @@ def _pose_candidates(Xv: np.ndarray, pn: np.ndarray):
             n = 0
         if n:
             return [(rvecs[i].ravel(), tvecs[i].ravel()) for i in range(n)]
-    ok, rv, tv = cv2.solvePnP(Xv, pn, K, None)
+    # Fallback (non-coplanar, or coplanar where IPPE could not solve). The iterative solver
+    # raises on a sparse/degenerate view ("DLT needs >= 6 points"); treat that as "no
+    # candidate" so the caller seeds a default pose instead of crashing the whole calibration.
+    try:
+        ok, rv, tv = cv2.solvePnP(Xv, pn, K, None)
+    except cv2.error:
+        return []
     return [(rv.ravel(), tv.ravel())] if ok else []
 
 
