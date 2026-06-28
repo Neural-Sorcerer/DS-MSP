@@ -197,6 +197,80 @@ def finite_difference_param_jacobian(model: CameraModel, P: np.ndarray,
     return J
 
 
+def _relerr(a: np.ndarray, b: np.ndarray) -> float:
+    """Frobenius relative error ``‖a − b‖ / max(‖a‖, eps)``."""
+    a = np.asarray(a, float)
+    b = np.asarray(b, float)
+    den = float(np.linalg.norm(a))
+    return float(np.linalg.norm(a - b) / max(den, 1e-12))
+
+
+def gradcheck_project(model: CameraModel, P: np.ndarray = None, *,
+                      rel_tol: float = 1e-6, h: float = 1e-4) -> dict:
+    """Strict analytic-vs-finite-difference check of ``project_jacobian``.
+
+    Unlike the cheap 5e-3 smoke check, this uses **Richardson extrapolation** of central
+    differences — combining steps ``h`` and ``h/2`` as ``(4·D(h/2) − D(h))/3`` cancels the
+    ``O(h²)`` truncation term, leaving ``O(h⁴))`` so the residual reflects the *analytic*
+    Jacobian's correctness, not the differencing scheme. Returns relative Frobenius errors
+    for ``J_point`` and ``J_param`` over valid points, plus an ``ok`` verdict.
+
+    This is the package's standing "differentiability contract": every model's hand-derived
+    Jacobian must agree with finite differences to ``rel_tol``.
+    """
+    if P is None:
+        P = sample_forward_points()
+    _, J_point_an, J_param_an, valid = model.project_jacobian(P)
+
+    # Richardson: f' ≈ (4·D(h/2) − D(h)) / 3 from central differences.
+    Jp = (4.0 * finite_difference_point_jacobian(model, P, eps=h / 2)
+          - finite_difference_point_jacobian(model, P, eps=h)) / 3.0
+    Jpar = (4.0 * finite_difference_param_jacobian(model, P, eps=h / 2)
+            - finite_difference_param_jacobian(model, P, eps=h)) / 3.0
+
+    m = np.asarray(valid, bool)
+    point_err = _relerr(J_point_an[m], Jp[m])
+    param_err = _relerr(J_param_an[m], Jpar[m])
+    return {
+        "point_rel_err": point_err,
+        "param_rel_err": param_err,
+        "rel_tol": rel_tol,
+        "ok": point_err < rel_tol and param_err < rel_tol,
+    }
+
+
+def gradcheck_retraction(*, rel_tol: float = 1e-6, h: float = 1e-4,
+                         seed: int = 0, n: int = 24) -> dict:
+    """Strict check of the SO(3) right Jacobian used by the manifold re-basing solver.
+
+    ``J_r(w)`` satisfies ``Exp(w+δ) ≈ Exp(w)·Exp(J_r(w)·δ)`` for small ``δ`` — i.e. column
+    ``k`` of ``J_r(w)`` is ``∂/∂δ_k Log(Exp(w)ᵀ·Exp(w+δ))`` at ``δ=0``. Compares that against
+    Richardson-extrapolated finite differences over random tangents (avoiding ``‖w‖≈π``).
+    Makes the manifold Jacobian — the foundation of the re-basing LM — a first-class contract.
+    """
+    from .core.lie import so3_exp, so3_log, so3_right_jacobian
+
+    rng = np.random.default_rng(seed)
+    worst = 0.0
+    for _ in range(n):
+        w = rng.uniform(-2.0, 2.0, 3)            # ‖w‖ < ~3.46, comfortably off the π shell
+        Jr_an = so3_right_jacobian(w)
+        Rw_T = so3_exp(w).T
+
+        def g(delta):
+            return so3_log(Rw_T @ so3_exp(w + delta))
+
+        Jr_fd = np.zeros((3, 3))
+        for k in range(3):
+            e = np.zeros(3)
+            e[k] = 1.0
+            d1 = (g(e * (h / 2)) - g(-e * (h / 2))) / h          # central, step h/2
+            d2 = (g(e * h) - g(-e * h)) / (2 * h)                # central, step h
+            Jr_fd[:, k] = (4.0 * d1 - d2) / 3.0                  # Richardson
+        worst = max(worst, _relerr(Jr_an, Jr_fd))
+    return {"rel_err": worst, "rel_tol": rel_tol, "ok": worst < rel_tol}
+
+
 #: Sample factories the contract suite always runs against. Later phases append
 #: ``(UCMModel.sample)``, ``(KannalaBrandtModel.sample)``, etc.
 REFERENCE_MODELS: List[Tuple[str, Callable[[], CameraModel]]] = [
