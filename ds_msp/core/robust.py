@@ -27,7 +27,7 @@ VALID_KERNELS = ("none", "huber", "pseudo_huber", "cauchy", "geman_mcclure", "ba
 _BARRON_EPS = 1e-5
 
 
-def _barron_bd(alpha: float):
+def _barron_bd(alpha: float) -> tuple[float, float]:
     """Singularity-guarded ``(b, d)`` from Barron, CVPR 2019, Appendix B."""
     b = abs(alpha - 2.0) + _BARRON_EPS
     d = alpha + _BARRON_EPS if alpha >= 0 else alpha - _BARRON_EPS
@@ -131,7 +131,7 @@ STUDENT_EPS = 0.05
 
 
 def studentized_sq(J: np.ndarray, r: np.ndarray, *, block: int = 2,
-                   weights: np.ndarray = None, eps: float = STUDENT_EPS) -> np.ndarray:
+                   weights: np.ndarray | None = None, eps: float = STUDENT_EPS) -> np.ndarray:
     r"""Bounded-influence (Mallows-type) studentized squared residual per block.
 
     A high-leverage point can pull the fit toward itself so its *own* residual stays small
