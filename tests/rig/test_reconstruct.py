@@ -83,3 +83,19 @@ def test_object_obs_pool_boards_per_image():
     # rows index the fused cloud, and pooling yields more corners than any single board
     assert all(o.point_rows.max() < len(obj.pts_3d) for o in obs)
     assert max(len(o.point_rows) for o in obs) > specs[0].n_corners
+
+
+def test_reconstruct_with_model_aware_init_models():
+    """``init_models`` resects each board with the camera's native model (MC-Calib's
+    cam_params_path init) instead of the Brown bootstrap — required for wide-FOV lenses, and
+    here it recovers the same correct fused geometry on the synthetic rig."""
+    specs, board_obs, gt_pts, img_size = _make_board_obs()
+    # the true generating model for every camera (a known prior, like cam_params_path)
+    init_models = {0: RadTanModel(F, F, W / 2, H / 2, -0.05, 0.01, 0.0, 0.0, 0.0),
+                   1: RadTanModel(F, F, W / 2, H / 2, -0.05, 0.01, 0.0, 0.0, 0.0)}
+    obj = reconstruct_object(board_obs, specs, img_size, init_models=init_models)
+    assert set(obj.board_ids) == {0, 1, 2}
+    err = np.array([np.linalg.norm(obj.pts_3d[r] - gt_pts[int(b)][int(c)])
+                    for r, (b, c) in enumerate(obj.pts_obj_2_board)])
+    assert np.median(err) < 3e-3, f"median geometry error {np.median(err) * 1e3:.2f} mm"
+    assert err.max() < 1e-2

@@ -38,6 +38,15 @@ CAREER_ROADMAP.md
 # (The public-facing writing standard is docs/WRITING_GUIDE.md.)
 docs/research/doc_excellence_spec.md
 
+# AI R&D process environment (LOCAL-ONLY, versioned in its OWN private git repo).
+# `.ai/` holds the stage-gated R&D framework, the dedicated research/math/optimization
+# agents+skills (canonical source), decision records, experiment logs, and upstream-
+# codebase knowledge — the "how we drive the AI" layer. Kept out of the shared code repo
+# so developers never see our AI-guided process or artifacts. Synced into .claude/ via
+# `.ai/sync.sh`; the local CLAUDE.local.md orchestration pointer stays out too.
+.ai/
+CLAUDE.local.md
+
 # Simulation / rendering studio (LOCAL-ONLY, never committed to this repo).
 # It has its own local git repo and heavy viz dependencies (matplotlib, manim, …).
 # RULE: the studio generates visual assets; only its OUTPUT (copied into assets/)

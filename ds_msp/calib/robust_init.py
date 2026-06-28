@@ -256,18 +256,85 @@ def _pose_dlt_normalized(X: np.ndarray, pn: np.ndarray) -> Optional[Tuple[np.nda
     return R, t
 
 
+def _is_coplanar(X: np.ndarray, tol: float = 1e-3) -> bool:
+    """True if the 3-D points lie on a plane (smallest PCA extent ≪ the in-plane extent).
+
+    A single ChArUco board is coplanar (all ``Z = 0`` in board frame); a fused multi-board
+    object with a tilted board is not. The pose solver must branch on this: the general 3×4
+    DLT is **degenerate for coplanar points**, so a planar target needs a homography/IPPE pose.
+    """
+    Xc = np.asarray(X, float) - np.asarray(X, float).mean(0)
+    if len(Xc) < 4:
+        return True
+    s = np.linalg.svd(Xc, compute_uv=False)
+    return s[-1] <= tol * max(s[0], 1e-12)
+
+
+def _pose_planar_normalized(X: np.ndarray, pn: np.ndarray) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """Pose of a **coplanar** target from (3D, normalized-2D) pairs via a plane **homography**
+    (``K = I``), pure NumPy.
+
+    A point on the plane is ``P = c0 + a·e1 + b·e2`` (plane basis from PCA); under ``K = I`` its
+    camera ray is ``Xc = a·(R e1) + b·(R e2) + (R c0 + t) = H·[a, b, 1]ᵀ``. Fit ``H`` by DLT,
+    then recover ``R, t`` from its columns (Zhang's planar pose). Degeneracy-free for a board,
+    unlike the general 3×4 DLT."""
+    X = np.asarray(X, float)
+    pn = np.asarray(pn, float)
+    if len(X) < 4:
+        return None
+    c0 = X.mean(0)
+    Xc = X - c0
+    _, _, Vt = np.linalg.svd(Xc)
+    e1, e2, nrm = Vt[0], Vt[1], Vt[2]
+    a, b = Xc @ e1, Xc @ e2                       # 2-D plane coordinates
+    # homography DLT: [a,b,1] -> pn (2 rows/point), null-space of the 2n x 9 design matrix.
+    n = len(X)
+    M = np.zeros((2 * n, 9))
+    one = np.ones(n)
+    P = np.column_stack([a, b, one])             # (n,3) plane homog coords
+    M[0::2, 0:3] = -P
+    M[0::2, 6:9] = pn[:, 0:1] * P
+    M[1::2, 3:6] = -P
+    M[1::2, 6:9] = pn[:, 1:2] * P
+    _, _, Vh = np.linalg.svd(M)
+    H = Vh[-1].reshape(3, 3)
+    h1, h2, h3 = H[:, 0], H[:, 1], H[:, 2]
+    s = 0.5 * (np.linalg.norm(h1) + np.linalg.norm(h2))
+    if s < 1e-12:
+        return None
+    if h3[2] < 0:                                # enforce positive depth (g0_z > 0)
+        H, h1, h2, h3 = -H, -h1, -h2, -h3
+    g1, g2, g0 = h1 / s, h2 / s, h3 / s          # R e1, R e2, R c0 + t
+    g3 = np.cross(g1, g2)
+    G = np.column_stack([g1, g2, g3])
+    Uu, _, Vv = np.linalg.svd(G)                 # nearest rotation [R e1, R e2, R nrm]
+    Rg = Uu @ np.diag([1.0, 1.0, np.linalg.det(Uu @ Vv)]) @ Vv
+    R = Rg @ np.column_stack([e1, e2, nrm]).T    # R maps object axes -> camera
+    t = g0 - R @ c0
+    if t[2] <= 0:
+        return None
+    return R, t
+
+
 def ransac_pnp_normalized(X: np.ndarray, pn: np.ndarray, *, focal: float = 1.0,
                           thresh_px: float = 3.0, max_iters: int = 300,
                           confidence: float = 0.999, min_sample: int = 6,
                           seed: int = 0) -> Tuple[Optional[np.ndarray], np.ndarray]:
     """RANSAC pose on the normalized plane. ``thresh_px`` is interpreted in pixels via
     ``focal`` (the model focal) so the gate matches the pixel-domain blunders. Returns
-    ``(T_cam_obj (4,4) | None, inlier_mask)``."""
+    ``(T_cam_obj (4,4) | None, inlier_mask)``.
+
+    Branches on target geometry: a **coplanar** board uses the IPPE planar solver (the general
+    3×4 DLT is degenerate for coplanar points — it returns garbage poses, ~1700 px reprojection
+    on a wide-FOV board); a non-coplanar (fused multi-board) object uses the DLT."""
     X = np.asarray(X, float)
     pn = np.asarray(pn, float)
     n = len(X)
     if n < min_sample:
         return None, np.zeros(n, bool)
+    coplanar = _is_coplanar(X)
+    min_sample = 4 if coplanar else min_sample
+    solve = _pose_planar_normalized if coplanar else _pose_dlt_normalized
     thr = thresh_px / max(focal, 1e-9)       # normalized-plane tolerance
     rng = np.random.default_rng(seed)
     best_inl = np.zeros(n, bool)
@@ -285,7 +352,7 @@ def ransac_pnp_normalized(X: np.ndarray, pn: np.ndarray, *, focal: float = 1.0,
     while it < iters and it < max_iters:
         it += 1
         sample = rng.choice(n, min_sample, replace=False)
-        sol = _pose_dlt_normalized(X[sample], pn[sample])
+        sol = solve(X[sample], pn[sample])
         if sol is None:
             continue
         R, t = sol
@@ -300,7 +367,7 @@ def ransac_pnp_normalized(X: np.ndarray, pn: np.ndarray, *, focal: float = 1.0,
                 iters = min(max_iters, int(np.log1p(-confidence) / den) + 1)
     if best_inl.sum() < min_sample:
         return None, best_inl
-    sol = _pose_dlt_normalized(X[best_inl], pn[best_inl])
+    sol = solve(X[best_inl], pn[best_inl])
     if sol is None:
         return None, best_inl
     R, t = sol

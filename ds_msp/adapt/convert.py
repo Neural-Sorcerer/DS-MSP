@@ -2,9 +2,20 @@
 Camera model conversion ("adapter").
 
 Converts an already-calibrated source model to a target model **without images or
-recalibration**: sample pixels -> unproject with the source -> linear seed the
-target -> refine with Levenberg-Marquardt using each model's **analytic** param
-Jacobian (no autodiff). Mirrors the fisheye-calib-adapter pipeline in pure Python.
+recalibration**: sample pixels -> unproject with the source -> seed the target ->
+refine with Levenberg-Marquardt using each model's **analytic** param Jacobian
+(no autodiff). Mirrors the fisheye-calib-adapter pipeline in pure Python.
+
+Global optimum, any scenario
+----------------------------
+A single linear seed plus one local refine can stall in a poor basin when the
+target's shape parameters are far from their seed (e.g. a strong-``xi`` Double
+Sphere, or a polynomial OCam whose higher coefficients matter). To find the
+*global* optimum regardless of the source, the refine runs as a **multi-start**:
+the deterministic linear seed plus ``n_restarts`` dispersed seeds over the target's
+shape parameters, keeping the lowest-cost fit. The intrinsics (fx, fy, cx, cy) are
+held at their linear-seed values for every start because they are already optimal
+in closed form; only the *shape* parameters are dispersed.
 
 Decoupled by dependency injection: ``convert`` takes the source instance and the
 target *class*, so this module imports no concrete model — only the contract and
@@ -13,7 +24,7 @@ SciPy. Works with any model satisfying ``CameraModel``.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple, Type
+from typing import List, Optional, Tuple, Type
 
 import numpy as np
 from scipy.optimize import least_squares
@@ -22,10 +33,42 @@ from ..core.contracts import CameraModel
 from .evaluate import reprojection_report
 from .sampling import sample_image_grid
 
+# Intrinsics are nailed by the linear seed; only these "shape" parameters are
+# dispersed across restarts.
+_INTRINSIC_NAMES = frozenset({"fx", "fy", "cx", "cy"})
+
+
+def _shape_seeds(target_cls: Type[CameraModel], base: np.ndarray,
+                 n_restarts: int, rng: np.random.Generator) -> List[np.ndarray]:
+    """Linear seed + ``n_restarts`` dispersed seeds over shape parameters."""
+    seeds = [base.copy()]
+    if n_restarts <= 0:
+        return seeds
+    lb, ub = target_cls.param_bounds()
+    shape_idx = [i for i, n in enumerate(target_cls.param_names)
+                 if n not in _INTRINSIC_NAMES]
+    if not shape_idx:
+        return seeds
+    for _ in range(n_restarts):
+        p = base.copy()
+        for i in shape_idx:
+            lo, hi = lb[i], ub[i]
+            s = base[i]
+            # Sample within a window around the seed, clipped to bounds. The
+            # window is the smaller of half the (finite) bound span or a scale
+            # tied to the seed magnitude, so tightly-bounded params (alpha, xi)
+            # explore their whole range while large ones (OCam a-coeffs) stay local.
+            span = 0.5 * (hi - lo)
+            w = min(span, max(abs(s), 1.0))
+            p[i] = rng.uniform(max(lo, s - w), min(hi, s + w))
+        seeds.append(np.clip(p, lb, ub))
+    return seeds
+
 
 def convert(source: CameraModel, target_cls: Type[CameraModel], *,
             width: int, height: int, n_samples: int = 500,
             max_fov_deg: Optional[float] = None,
+            n_restarts: int = 4, seed: int = 0,
             verbose: bool = False) -> Tuple[CameraModel, dict]:
     """Fit ``target_cls`` parameters to reproduce ``source`` over the image.
 
@@ -43,11 +86,17 @@ def convert(source: CameraModel, target_cls: Type[CameraModel], *,
         Restrict the fitted FOV (full angle). Useful when the target is narrower
         than the source (e.g. converting a >180 deg fisheye into a pinhole-like
         model) so the fit is not dragged by unrepresentable rays.
+    n_restarts : int
+        Number of dispersed shape-parameter restarts in addition to the linear
+        seed (multi-start global optimization). ``0`` reproduces the legacy
+        single-start behaviour.
+    seed : int
+        RNG seed for the restart dispersion, so conversions are reproducible.
 
     Returns
     -------
     (target, report) : the fitted model and a quality report (see
-    ``reprojection_report``).
+    ``reprojection_report``). ``report["n_restarts"]`` records the restart count.
     """
     # 1. sample pixels -> source bearing rays (forward hemisphere only)
     pixels = sample_image_grid(width, height, n_samples)
@@ -66,28 +115,39 @@ def convert(source: CameraModel, target_cls: Type[CameraModel], *,
     # 2. linear seed: inherit intrinsics from the source, SVD-seed distortion
     target = target_cls.from_params(np.zeros(len(target_cls.param_names)))
     target.initialize_from_correspondences(source.K, rays, pixels)
-
-    # 3. nonlinear refine: minimize project_target(rays) - pixels, analytic Jac.
     lb, ub = target_cls.param_bounds()
-    x0 = np.clip(target.params, lb, ub)
+    base = np.clip(target.params, lb, ub)
 
+    # 3. nonlinear refine, NaN-safe so out-of-domain rays never poison the solve.
     def residual(p):
         uv, _ = target_cls.from_params(p).project(rays)
-        return (uv - pixels).ravel()
+        r = uv - pixels
+        return np.where(np.isfinite(r), r, 1e6).ravel()
 
     def jac(p):
         _, _, j_param, _ = target_cls.from_params(p).project_jacobian(rays)
-        return j_param.reshape(-1, p.size)
+        j = j_param.reshape(-1, p.size)
+        return np.where(np.isfinite(j), j, 0.0)
 
-    res = least_squares(residual, x0, jac=jac, bounds=(lb, ub),
-                        method="trf", x_scale="jac",
-                        verbose=2 if verbose else 0)
-    target = target_cls.from_params(res.x)
+    # 3b. multi-start: refine from the linear seed plus dispersed shape seeds,
+    #     keep the lowest-cost fit (the global optimum in practice).
+    rng = np.random.default_rng(seed)
+    best_x: np.ndarray = base
+    best_cost = np.inf
+    best_success = False
+    for x0 in _shape_seeds(target_cls, base, n_restarts, rng):
+        res = least_squares(residual, x0, jac=jac, bounds=(lb, ub),
+                            method="trf", x_scale="jac",
+                            verbose=2 if verbose else 0)
+        if res.cost < best_cost:
+            best_cost, best_x, best_success = res.cost, res.x, res.success
+    target = target_cls.from_params(best_x)
 
     # 4. evaluate over the (possibly FOV-restricted) image region
     report = reprojection_report(source, target, width, height,
                                  max_fov_deg=max_fov_deg, gt_params=None)
-    report["converged"] = bool(res.success)
+    report["converged"] = bool(best_success)
+    report["n_restarts"] = int(n_restarts)
     report["source_model"] = source.name
     report["target_model"] = target_cls.name
     return target, report

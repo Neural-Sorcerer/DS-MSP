@@ -214,7 +214,7 @@ def _resolve_model_map(model_spec, cam_ids) -> Dict[int, type]:
 
 
 def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 1.0,
-                          max_nfev: int = 150):
+                          max_nfev: int = 150, init_K: Optional[Dict[int, np.ndarray]] = None):
     """Build a front-end that calibrates each camera with its chosen model.
 
     ``model_spec`` is either one model (class or name) used for **every** camera, or a
@@ -226,9 +226,18 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
     that seed. Avoiding a blind focal sweep matters for models whose distortion can absorb a
     focal-seed error (e.g. KB). Returns a callable with the ``front_end`` signature used by
     :func:`calibrate_rig`.
+
+    ``init_K`` (``{cam_id: 3x3}``) supplies a per-camera focal / principal-point **seed** from
+    a known intrinsics file — MC-Calib's ``cam_params_path`` initialization. When given for a
+    camera it replaces the from-scratch pinhole pre-calibration (which is biased on a real
+    strong-fisheye lens) and that camera bypasses the cross-camera focal-consensus reset (the
+    consensus median is meaningless across a mixed-resolution rig, e.g. 2592 + 640 px cameras).
+    The chosen model still fits its native distortion and the global BA still refines unless
+    intrinsics are fixed.
     """
     def front_end(obj, obs_by_cam, img_size):
         model_map = _resolve_model_map(model_spec, list(obs_by_cam))
+        seeded = set(init_K) if init_K else set()
         raw = {}
         for cam_id, obs in obs_by_cam.items():
             model_cls = model_map[cam_id]
@@ -236,8 +245,12 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
             ge6 = [o for o in obs if len(o.point_rows) >= 6]   # views usable for intrinsics
             objpts = [obj.pts_3d[o.point_rows].astype(np.float32) for o in ge6]
             imgpts = [o.pts_2d.astype(np.float32) for o in ge6]
-            # From-scratch robust pinhole pre-calibration (RANSAC DLT) -> clean focal seed.
-            Kp, _distp = _robust_pinhole(objpts, imgpts, w, h)
+            # Focal / principal-point seed: the provided intrinsics if given (MC-Calib's
+            # cam_params_path init), else a from-scratch robust pinhole pre-calibration.
+            if cam_id in seeded:
+                Kp = np.asarray(init_K[cam_id], float)
+            else:
+                Kp, _distp = _robust_pinhole(objpts, imgpts, w, h)
             # Model-aware seed + RANSAC-inlier correspondences (so gross outliers neither
             # corrupt the per-model distortion solve nor wreck calibrate()'s pose seeding).
             seed_ma, Xcal, uvcal = _model_aware_seed(model_cls, Kp, ge6, obj)
@@ -288,8 +301,9 @@ def make_bundle_front_end(model_spec, *, loss: str = "cauchy", f_scale: float = 
         cameras = {}
         for cam_id, r in raw.items():
             fx, fy = feff[cam_id]
-            if (len(raw) >= 2 and (abs(fx - med_fx) > 0.25 * med_fx
-                                   or abs(fy - med_fy) > 0.25 * med_fy)):
+            if (cam_id not in seeded and len(raw) >= 2
+                    and (abs(fx - med_fx) > 0.25 * med_fx
+                         or abs(fy - med_fy) > 0.25 * med_fy)):
                 w, h = img_size[cam_id]
                 Kc = np.array([[med_fx, 0, w / 2.0], [0, med_fy, h / 2.0], [0, 0, 1.0]])
                 model = _seed_from_K(r["cls"], Kc)
@@ -322,7 +336,9 @@ def _gated_pnp(model, X, uv, max_rms_px: float = 2.0):
 def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
                   img_size: Dict[int, Tuple[int, int]],
                   *, fix_intrinsics: bool = False, verbose: bool = False,
-                  front_end: Optional[Callable] = None, he_approach: int = 0) -> RigState:
+                  front_end: Optional[Callable] = None, he_approach: int = 0,
+                  refine_structure: bool = False, structure_rounds: int = 6,
+                  gnc_iters: int = 5, gnc_start: float = 4.0) -> RigState:
     """Calibrate a multi-camera rig from fused-object observations.
 
     Returns a :class:`RigState` with per-camera intrinsics, ``T_c_g`` extrinsics
@@ -380,6 +396,31 @@ def calibrate_rig(obj: Object3D, object_obs: List[ObjectObs],
                            robust_kernel="huber", robust_scale="auto", verbose=verbose)
     #    (c) global joint — full rig + (optionally) intrinsics with a redescending Cauchy
     #        kernel and a short GNC anneal (refineAllCameraGroupAndObjectsAndIntrinsics).
+    # Graduated non-convexity: anneal the robust scale from ``gnc_start``×MAD down. A wider
+    # start + more steps escapes the bad-data basin under heavy (≈50%) gross-outlier
+    # contamination, where a MAD scale is itself corrupted — measurably more robust at the
+    # breakdown point with negligible cost on clean data.
     rig = ba.refine(rig, object_obs, fix_intrinsics=fix_intrinsics, robust_kernel="cauchy",
-                    robust_scale="auto", gnc_iters=5, gnc_start=4.0, verbose=verbose)
+                    robust_scale="auto", gnc_iters=gnc_iters, gnc_start=gnc_start,
+                    verbose=verbose)
+
+    #    (d) object-structure refinement (MC-Calib's refineObject), multi-board only: alternate
+    #        re-triangulating the fused object's 3-D points (gauge anchored on the reference
+    #        board) with the joint BA. A reconstructed nominal object carries inter-board pose
+    #        and physical-board error that no camera/pose update can absorb; freeing the
+    #        structure removes it — the dominant reprojection win on a real multi-board target.
+    if refine_structure and len(obj.board_ids) > 1:
+        prev = float("inf")
+        for _ in range(structure_rounds):
+            rig = ba.refine_object_structure(rig, object_obs)
+            # a light joint polish each round (no GNC, capped iters): the structure step did
+            # the heavy lifting, so the BA only has to absorb it — full-length GNC passes here
+            # were ~80% of total runtime for <0.5% extra accuracy.
+            rig = ba.refine(rig, object_obs, fix_intrinsics=fix_intrinsics,
+                            robust_kernel="cauchy", robust_scale="auto", max_iter=25,
+                            verbose=verbose)
+            cur = max(ba.reprojection_rms(rig, object_obs).values())
+            if prev - cur < 0.003 * prev:           # converged -> stop early
+                break
+            prev = cur
     return rig

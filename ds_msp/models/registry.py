@@ -14,7 +14,9 @@ from typing import Dict, Type
 
 from ..core.contracts import CameraModel
 from .double_sphere import DoubleSphereModel
+from .dsplus import DSPlusModel
 from .eucm import EUCMModel
+from .eucmplus import EUCMPlusModel
 from .kb import KannalaBrandtModel
 from .ocam import OCamModel
 from .radtan import RadTanModel
@@ -28,6 +30,8 @@ _BY_NAME: Dict[str, Type[CameraModel]] = {
     "eucm": EUCMModel,
     "kb": KannalaBrandtModel,
     "ocam": OCamModel,
+    "dsplus": DSPlusModel,
+    "eucmplus": EUCMPlusModel,
 }
 
 #: Accepted aliases (MC-Calib strings + legacy ints) -> canonical DS-MSP name.
@@ -36,13 +40,16 @@ _ALIAS: Dict[str, str] = {
     "kannala": "kb", "kannala_brandt": "kb", "fisheye": "kb",
     "brown": "radtan", "perspective": "radtan", "opencv": "radtan",
     "ocam_calib": "ocam", "ocamcalib": "ocam", "scaramuzza": "ocam",
+    "ds+": "dsplus", "ds_plus": "dsplus", "doublespheres_plus": "dsplus",
+    "eucm+": "eucmplus", "eucm_plus": "eucmplus",
     "0": "radtan", "1": "kb",                      # legacy distortion_model ints
 }
 
 #: DS-MSP name -> the string MC-Calib writes in calibrated_cameras_data.yml.
 _TO_MCCALIB: Dict[str, str] = {
     "radtan": "radtan", "ds": "double_sphere", "ucm": "ucm",
-    "eucm": "eucm", "kb": "kb", "ocam": "ocam",
+    "eucm": "eucm", "kb": "kb", "ocam": "ocam", "dsplus": "dsplus",
+    "eucmplus": "eucmplus",
 }
 
 #: Models valid for a (forward-facing) pinhole camera, and for a fisheye camera, used by the

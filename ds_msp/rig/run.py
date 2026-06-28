@@ -54,33 +54,44 @@ def make_fixed_intrinsic_front_end(cameras: Dict[int, object]):
 
 def calibrate_scenario(scn: Scenario, model_spec, *, fix_intrinsics: bool = False,
                        init_cameras: Optional[Dict[int, object]] = None,
+                       init_K: Optional[Dict[int, object]] = None,
                        save_dir: Optional[str] = None,
                        camera_params_file_name: str = "",
                        image_root: Optional[str] = None,
-                       cam_prefix: str = "Cam_", he_approach: int = 0) -> Dict:
+                       cam_prefix: str = "Cam_", he_approach: int = 0,
+                       refine_structure: bool = False) -> Dict:
     """Calibrate one loaded :class:`Scenario` and (optionally) write MC-Calib output.
 
     ``model_spec`` is a single model or a ``{cam_id: model}`` map (names or classes).
     ``fix_intrinsics=True`` requires ``init_cameras`` (per-camera models with the intrinsics
-    to hold fixed) and optimizes extrinsics only. When ``image_root`` is given, MC-Calib-style
-    reprojection overlay images are written too. Returns ``{rig, models, paths, metrics}``.
+    to hold fixed) and optimizes extrinsics only. ``init_K`` (``{cam_id: 3x3}``) seeds the
+    refining front-end's focal / principal point from a known intrinsics file (MC-Calib's
+    ``cam_params_path`` initialization) — essential for a real strong-fisheye / mixed-resolution
+    rig. When ``image_root`` is given, MC-Calib-style reprojection overlay images are written
+    too. Returns ``{rig, models, paths, metrics}``.
     """
-    if fix_intrinsics:
-        if init_cameras is None:
-            raise ValueError("fix_intrinsics=True needs init_cameras (initial intrinsics)")
+    if init_cameras is not None:
+        # Start from the provided per-camera models (MC-Calib's cam_params_path init): the
+        # front-end uses them directly instead of a from-scratch re-fit — essential for a
+        # wide-FOV fisheye, whose from-scratch model fit can diverge. ``fix_intrinsics`` then
+        # decides only whether the joint BA refines these intrinsics or holds them.
         front_end = make_fixed_intrinsic_front_end(init_cameras)
+    elif fix_intrinsics:
+        raise ValueError("fix_intrinsics=True needs init_cameras (initial intrinsics)")
     else:
-        front_end = make_bundle_front_end(model_spec)
+        front_end = make_bundle_front_end(model_spec, init_K=init_K)
     rig = calibrate_rig(scn.object, scn.object_obs, scn.img_size,
                         fix_intrinsics=fix_intrinsics, front_end=front_end,
-                        he_approach=he_approach)
-    rig.objects = {scn.object.object_id: scn.object}
+                        he_approach=he_approach, refine_structure=refine_structure)
+    # keep the (possibly structure-refined) object the rig actually solved with
+    refined_object = rig.objects.get(scn.object.object_id, scn.object)
 
     paths = {}
     if save_dir is not None:
-        paths = save_mccalib_results(rig, save_dir, object3d=scn.object,
+        paths = save_mccalib_results(rig, save_dir, object3d=refined_object,
                                      object_obs=scn.object_obs,
-                                     camera_params_file_name=camera_params_file_name)
+                                     camera_params_file_name=camera_params_file_name,
+                                     image_root=image_root, cam_prefix=cam_prefix)
         if image_root is not None:
             nr = save_reprojection_images(rig, scn.object_obs, image_root, save_dir,
                                           cam_prefix=cam_prefix)

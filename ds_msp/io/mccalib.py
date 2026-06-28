@@ -186,6 +186,10 @@ def save_mccalib_cameras(rig, path: str, *, cam_groups: Optional[Dict[int, int]]
         fs.write("camera_matrix", np.asarray(model.K, float))
         fs.write("distortion_vector",
                  np.asarray(model.distortion, float).reshape(1, -1))
+        # distortion_type keeps MC-Calib's field present for every camera (0=Brown/perspective,
+        # 1=Kannala/fisheye-family); camera_model carries the exact model for the DS-MSP
+        # extension models (ucm/eucm/ds/ocam) MC-Calib's two-model enum cannot name.
+        fs.write("distortion_type", 0 if model.name == "radtan" else 1)
         fs.write("camera_model", mccalib_name(model.name))
         fs.write("camera_group", int(groups.get(c, 0)))
         fs.write("img_width", int(w))
@@ -332,7 +336,26 @@ def _write_seq_of_seqs(fs, name, arrays, cast=float):
     fs.endWriteStruct()
 
 
-def save_mccalib_detected_keypoints(object_obs, obj: Object3D, img_size, path: str) -> None:
+def _write_str_seq(fs, name, values):
+    fs.startWriteStruct(name, cv2.FileNode_SEQ)
+    for v in values:
+        fs.write("", str(v))
+    fs.endWriteStruct()
+
+
+def _resolve_frame_path(image_root, cam_prefix, cam, fr, ext="png"):
+    """Resolve the source image path for ``(cam, frame)`` (MC-Calib's frame_paths), matching the
+    detection/reprojection image resolver. Returns the path string or ``""`` if not found."""
+    for cand in (f"{fr + 1:05d}.{ext}", f"{fr:05d}.{ext}", f"{fr + 1:06d}.{ext}", f"{fr:06d}.{ext}"):
+        p = os.path.join(image_root, f"{cam_prefix}{cam + 1:03d}", cand)
+        if os.path.exists(p):
+            return p
+    return ""
+
+
+def save_mccalib_detected_keypoints(object_obs, obj: Object3D, img_size, path: str, *,
+                                    image_root: Optional[str] = None,
+                                    cam_prefix: str = "Cam_") -> None:
     """Write ``detected_keypoints_data.yml`` in MC-Calib's schema (McCalib.cpp:507): per
     ``camera_<i>`` the parallel, per-board-observation sequences ``frame_idxs`` / ``board_idxs``
     (inline) and ``pts_2d`` / ``charuco_idxs`` (sequence of inline ``[u,v,...]`` / corner-id
@@ -347,19 +370,24 @@ def save_mccalib_detected_keypoints(object_obs, obj: Object3D, img_size, path: s
     fs.write("nb_camera", int(len(by_cam)))
     for cam in sorted(by_cam):
         w, h = img_size.get(cam, (0, 0))
-        frame_idxs, board_idxs, pts_2d, charuco = [], [], [], []
+        frame_idxs, board_idxs, pts_2d, charuco, frame_paths = [], [], [], [], []
         for o in sorted(by_cam[cam], key=lambda x: x.frame_id):
             bc = b2[o.point_rows]                            # (n,2)
+            fp = (_resolve_frame_path(image_root, cam_prefix, cam, o.frame_id)
+                  if image_root else "")
             for bid in np.unique(bc[:, 0]):
                 m = bc[:, 0] == bid
                 frame_idxs.append(o.frame_id)
                 board_idxs.append(int(bid))
                 pts_2d.append(np.asarray(o.pts_2d, float)[m].ravel())
                 charuco.append(bc[m, 1])
+                frame_paths.append(fp)
         fs.startWriteStruct(f"camera_{cam}", cv2.FileNode_MAP)
         fs.write("img_width", int(w))
         fs.write("img_height", int(h))
         _write_int_seq(fs, "frame_idxs", frame_idxs)
+        if image_root:                                       # MC-Calib's frame_paths field
+            _write_str_seq(fs, "frame_paths", frame_paths)
         _write_int_seq(fs, "board_idxs", board_idxs)
         _write_seq_of_seqs(fs, "pts_2d", pts_2d, cast=float)
         _write_seq_of_seqs(fs, "charuco_idxs", charuco, cast=int)
@@ -401,7 +429,8 @@ def save_detection_images(object_obs, image_root: str, save_dir: str, *,
 
 def save_mccalib_results(rig, save_dir: str, *, object3d: Optional[Object3D] = None,
                          object_obs=None, cam_groups: Optional[Dict[int, int]] = None,
-                         camera_params_file_name: str = "") -> Dict[str, str]:
+                         camera_params_file_name: str = "", image_root: Optional[str] = None,
+                         cam_prefix: str = "Cam_") -> Dict[str, str]:
     """Write the full MC-Calib result set into ``save_dir`` and return the paths written.
 
     Always writes ``calibrated_cameras_data.yml`` (or ``camera_params_file_name`` if given)
@@ -423,7 +452,8 @@ def save_mccalib_results(rig, save_dir: str, *, object3d: Optional[Object3D] = N
         save_mccalib_reprojection_error(rig, object_obs, paths["reprojection_error"])
         if obj is not None:
             paths["keypoints"] = os.path.join(save_dir, "detected_keypoints_data.yml")
-            save_mccalib_detected_keypoints(object_obs, obj, rig.img_size, paths["keypoints"])
+            save_mccalib_detected_keypoints(object_obs, obj, rig.img_size, paths["keypoints"],
+                                            image_root=image_root, cam_prefix=cam_prefix)
     return paths
 
 

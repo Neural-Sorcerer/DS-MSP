@@ -56,8 +56,19 @@ def _rig_from_state(rig: RigState, state: dict) -> RigState:
     return out
 
 
+def _tangent_basis(f: np.ndarray):
+    """Two orthonormal vectors spanning the tangent plane at each unit bearing ``f`` (N,3)."""
+    helper = np.tile(np.array([0.0, 1.0, 0.0]), (f.shape[0], 1))
+    near = np.abs(f @ np.array([0.0, 1.0, 0.0])) > 0.9
+    helper[near] = np.array([1.0, 0.0, 0.0])
+    e_u = np.cross(helper, f); e_u /= np.linalg.norm(e_u, axis=1, keepdims=True)
+    e_v = np.cross(f, e_u)
+    return e_u, e_v
+
+
 def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
-                  fix_intrinsics: bool = True, fix_extrinsics: bool = False):
+                  fix_intrinsics: bool = True, fix_extrinsics: bool = False,
+                  residual_mode: str = "pixel"):
     """Assemble the BA callbacks ``(state0, residual, jacobian, retract, K)`` for one
     pass, without solving. ``residual``/``jacobian``/``retract`` follow the
     :func:`core.optimize.lm_solve` contract; ``K`` is the tangent dimension. Exposed so
@@ -85,7 +96,14 @@ def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
             intr_col[c] = col; col += Pn[c]
     K = col
 
-    # precompute per-observation object points (board poses baked into pts_3d)
+    angular = residual_mode == "angular"
+    if angular and not fix_intrinsics:
+        raise ValueError("angular residual requires fix_intrinsics=True "
+                         "(the observed bearing is intrinsics-dependent)")
+
+    # precompute per-observation object points (board poses baked into pts_3d). For the angular
+    # (bearing) residual, also precompute each corner's observed unit bearing f = unproject(uv)
+    # and its tangent basis — the model-agnostic ray the predicted ray is compared against.
     obs_data = []
     total_rows = 0
     for o in object_obs:
@@ -94,26 +112,46 @@ def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
         if (o.object_id, o.frame_id) not in rig.object_poses:  # frame never got a pose
             continue
         Xo = rig.objects[o.object_id].pts_3d[o.point_rows]      # (N,3) object frame
-        obs_data.append((o, Xo))
+        tb = None
+        if angular:
+            f, fv = rig.cameras[o.cam_id].unproject(o.pts_2d)
+            f = np.asarray(f, float)
+            f = f / np.linalg.norm(f, axis=1, keepdims=True)
+            eu, ev = _tangent_basis(f)
+            tb = (f, eu, ev, np.asarray(fv).ravel().astype(bool) if fv is not None
+                  else np.ones(len(f), bool))
+        obs_data.append((o, Xo, tb))
         total_rows += 2 * len(Xo)
 
     def _project_all(state):
         out = []
-        for o, Xo in obs_data:
+        for o, Xo, tb in obs_data:
             key = (o.object_id, o.frame_id)
             Xg = (state["obj_R"][key] @ Xo.T).T + state["obj_t"][key]
             Xc = (state["cam_R"][o.cam_id] @ Xg.T).T + state["cam_t"][o.cam_id]
-            out.append((o, Xo, key, Xg, Xc))
+            out.append((o, Xo, key, Xg, Xc, tb))
         return out
+
+    def _ang_resid(Xc, tb):
+        """Tangent-plane angular residual r=[eu·d, ev·d], d=normalize(Xc) (N,2)."""
+        f, eu, ev, fv = tb
+        nrm = np.linalg.norm(Xc, axis=1, keepdims=True)
+        d = Xc / np.maximum(nrm, 1e-12)
+        r = np.stack([np.einsum('ij,ij->i', d, eu), np.einsum('ij,ij->i', d, ev)], 1)
+        r[~fv] = 0.0
+        return r, d, nrm[:, 0]
 
     def residual(state):
         m_cache = {c: classes[c].from_params(state["intr"][c]) for c in rig.cameras}
         r = np.zeros(total_rows)
         row = 0
-        for o, Xo, key, Xg, Xc in _project_all(state):
-            uv, valid = m_cache[o.cam_id].project(Xc)
-            diff = np.zeros_like(o.pts_2d, float)
-            diff[valid] = uv[valid] - o.pts_2d[valid]
+        for o, Xo, key, Xg, Xc, tb in _project_all(state):
+            if angular:
+                diff, _d, _n = _ang_resid(Xc, tb)
+            else:
+                uv, valid = m_cache[o.cam_id].project(Xc)
+                diff = np.zeros_like(o.pts_2d, float)
+                diff[valid] = uv[valid] - o.pts_2d[valid]
             r[row:row + 2 * len(Xo)] = diff.ravel()
             row += 2 * len(Xo)
         return r
@@ -122,14 +160,24 @@ def build_problem(rig: RigState, object_obs: List[ObjectObs], *,
         m_cache = {c: classes[c].from_params(state["intr"][c]) for c in rig.cameras}
         J = np.zeros((total_rows, K))
         row = 0
-        for o, Xo, key, Xg, Xc in _project_all(state):
+        for o, Xo, key, Xg, Xc, tb in _project_all(state):
             N = len(Xo)
             cam = o.cam_id
             R_cam = state["cam_R"][cam]
             R_obj = state["obj_R"][key]
-            uv, J_point, J_param, valid = m_cache[cam].project_jacobian(Xc)
-            mask = valid[:, None, None].astype(float)
-            Jp = J_point * mask                                  # (N,2,3)
+            if angular:
+                # ∂r/∂Xc = E @ P, P = (I - d dᵀ)/‖Xc‖ ; no intrinsic columns (intrinsics fixed)
+                _r, d, nrm = _ang_resid(Xc, tb)
+                f, eu, ev, fv = tb
+                E = np.stack([eu, ev], axis=1)                   # (N,2,3)
+                P = (np.eye(3)[None] - np.einsum('ni,nj->nij', d, d)) / np.maximum(
+                    nrm[:, None, None], 1e-12)
+                Jp = np.einsum('nij,njk->nik', E, P) * fv[:, None, None]   # (N,2,3) wrt Xc
+                J_param = None
+            else:
+                uv, J_point, J_param, valid = m_cache[cam].project_jacobian(Xc)
+                mask = valid[:, None, None].astype(float)
+                Jp = J_point * mask                              # (N,2,3)
             # object pose: dXc/dω = R_cam @ (-R_obj[Xo]_x); dXc/dt = R_cam
             dXc_dw_o = -np.einsum('ij,njk->nik', R_cam @ R_obj, _skew_batch(Xo))
             Jw_o = np.einsum('nij,njc->nic', Jp, dXc_dw_o)       # (N,2,3)
@@ -309,7 +357,8 @@ def build_schur_problem(rig: RigState, object_obs: List[ObjectObs], *,
 def refine(rig: RigState, object_obs: List[ObjectObs], *,
            fix_intrinsics: bool = True, fix_extrinsics: bool = False, max_iter: int = 60,
            robust_kernel: str = "huber", robust_scale="auto", gnc_iters: int = 0,
-           gnc_start: float = 0.0, verbose: bool = False, sparse: bool = True) -> RigState:
+           gnc_start: float = 0.0, verbose: bool = False, sparse: bool = True,
+           residual_mode: str = "pixel") -> RigState:
     """One BA pass. Returns a refined copy of ``rig``.
 
     ``fix_intrinsics=True`` reproduces ``refineCameraGroupAndObjects`` (poses only);
@@ -330,6 +379,18 @@ def refine(rig: RigState, object_obs: List[ObjectObs], *,
     """
     rk = dict(robust_kernel=robust_kernel, robust_scale=robust_scale,
               gnc_iters=gnc_iters, gnc_start=gnc_start)
+    if residual_mode == "angular":
+        # The bearing (angular) residual is the model-agnostic, pinhole/fisheye-uniform error
+        # (Tier-1 C5): compare the predicted ray to the observed bearing in the tangent plane.
+        # Implemented on the dense analytic path with intrinsics held fixed (the observed bearing
+        # is intrinsics-dependent), used as a geometry/structure polish.
+        state0, residual, jacobian, retract, Kdim = build_problem(
+            rig, object_obs, fix_intrinsics=True, fix_extrinsics=fix_extrinsics,
+            residual_mode="angular")
+        if Kdim == 0:
+            return rig
+        res = lm_solve(state0, residual, jacobian, retract, block=2, max_iter=max_iter, **rk)
+        return _rig_from_state(rig, res.state)
     if sparse:
         state0, residual, linearize, retract, shared_dim, n_groups = build_schur_problem(
             rig, object_obs, fix_intrinsics=fix_intrinsics, fix_extrinsics=fix_extrinsics)
@@ -383,6 +444,94 @@ def refine_groups(rig: RigState, object_obs: List[ObjectObs], groups: List[List[
             out.T_c_g[c] = ref.T_c_g[c]
         for k in sub_keys:
             out.object_poses[k] = ref.object_poses[k]
+    return out
+
+
+def _robust_w(r2: np.ndarray, scale: float) -> np.ndarray:
+    """Cauchy IRLS weight ``ρ'(r)/r`` for a squared-residual-per-point ``r2`` (down-weight,
+    never reject)."""
+    return 1.0 / (1.0 + r2 / (scale * scale))
+
+
+def refine_object_structure(rig: RigState, object_obs: List[ObjectObs], *,
+                            free_rows=None, iters: int = 10, robust_scale: float = 1.5
+                            ) -> RigState:
+    """Refine the fused object's 3-D point positions (MC-Calib's ``refineObject``).
+
+    With the camera intrinsics, extrinsics and per-frame object poses held fixed, each free
+    object point is re-triangulated from **all** its observations by a small robust
+    Gauss-Newton (analytic Jacobian ``J_point · R_c · R_o``, Cauchy-weighted). Reconstructed
+    nominal board geometry — and any inter-board pose / physical board imperfection baked into
+    it — is corrected to what the corners actually imply, the single largest reprojection
+    win on a real multi-board target.
+
+    ``free_rows`` is the set of object-point rows to move; the rest are held to **anchor the
+    gauge** (scale + frame). Default: every point except 3 spanning corners of the reference
+    board, so the metric scale and object frame stay pinned while all real structure (both
+    boards) is free. Returns a refined copy of ``rig``."""
+    obj = rig.objects[next(iter(rig.objects))] if rig.objects else None
+    if obj is None:
+        return rig
+    if free_rows is None:
+        ref_rows = [i for i, (b, _c) in enumerate(obj.pts_obj_2_board)
+                    if int(b) == obj.ref_board_id]
+        anchor = {ref_rows[0], ref_rows[len(ref_rows) // 2], ref_rows[-1]} if ref_rows else set()
+        free_rows = set(range(len(obj.pts_3d))) - anchor
+    else:
+        free_rows = set(int(r) for r in free_rows)
+
+    # Index every free point to a dense 0..F-1 slot, and group observations by (camera, frame)
+    # so each block's Jacobian is computed once per iteration for ALL its free points at once
+    # (vectorised over points) and scatter-added into the per-point 3x3 normal equations —
+    # ~10x faster than the per-point Python loop, since the work is now a handful of batched
+    # matmuls per object pose, not one tiny solve per (point, view).
+    free_sorted = sorted(free_rows)
+    slot = {r: i for i, r in enumerate(free_sorted)}
+    F = len(free_sorted)
+    blocks = []                                    # (cam, key, slots(int[]), gidx(int[]), uv)
+    for o in object_obs:
+        key = (o.object_id, o.frame_id)
+        if o.cam_id not in rig.cameras or key not in rig.object_poses:
+            continue
+        sel = [i for i, r in enumerate(o.point_rows) if int(r) in free_rows]
+        if not sel:
+            continue
+        sel = np.asarray(sel, int)
+        gidx = o.point_rows[sel].astype(int)
+        slots = np.array([slot[int(r)] for r in gidx], int)
+        blocks.append((o.cam_id, key, slots, gidx, o.pts_2d[sel].astype(float)))
+
+    out = copy.copy(rig)
+    pts = obj.pts_3d.copy()
+    if F == 0 or not blocks:
+        return out
+    X = pts[free_sorted].astype(float).copy()       # (F,3) free points, working copy
+    for _ in range(iters):
+        H = np.zeros((F, 3, 3)); g = np.zeros((F, 3))
+        for cam, key, slots, gidx, uv in blocks:
+            Tcg, Tgo = rig.T_c_g[cam], rig.object_poses[key]
+            M = Tcg[:3, :3] @ Tgo[:3, :3]
+            t = Tcg[:3, :3] @ Tgo[:3, 3] + Tcg[:3, 3]
+            Xc = X[slots] @ M.T + t
+            uvp, J_point, _Jp, valid = rig.cameras[cam].project_jacobian(Xc)
+            J = np.einsum('nij,jk->nik', J_point, M)            # (n,2,3) ∂uv/∂X
+            r = uvp - uv                                        # (n,2)
+            w = _robust_w(np.einsum('ni,ni->n', r, r), robust_scale) * valid.astype(float)
+            np.add.at(H, slots, w[:, None, None] * np.einsum('nij,nik->njk', J, J))
+            np.add.at(g, slots, w[:, None] * np.einsum('nij,ni->nj', J, r))
+        H += 1e-9 * np.eye(3)[None]
+        try:
+            dX = np.linalg.solve(H, -g[..., None])[..., 0]      # (F,3) all points at once
+        except np.linalg.LinAlgError:
+            break
+        X += dX
+        if float(np.max(np.einsum('ni,ni->n', dX, dX))) < 1e-14:
+            break
+    pts[free_sorted] = X
+    new_obj = copy.copy(obj)
+    new_obj.pts_3d = pts
+    out.objects = dict(rig.objects)
+    out.objects[obj.object_id] = new_obj
     return out
 
 

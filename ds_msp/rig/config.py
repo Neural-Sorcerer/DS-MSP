@@ -35,16 +35,90 @@ from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
+from scipy.optimize import least_squares
 
 from ..calib.charuco import BoardSpec, detect_rig, single_board_object
 from ..io.mccalib import (Scenario, _load_cameras, _load_detections, _load_groundtruth,
                           _load_object, radtan_from_cameragt)
-from ..models.registry import canonical_name
+from ..models.kb import KannalaBrandtModel
+from ..models.registry import canonical_name, model_class
 from ..rig.types import ObjectObs
+from .rig_calibrate import _seed_from_K
 from .run import calibrate_scenario
 
 _BROWN, _KANNALA = 0, 1
 _DIST_TO_MODEL = {_BROWN: "radtan", _KANNALA: "kb"}
+
+
+def _source_model(cam):
+    """The model the provided intrinsics are stored in: KB (4 fisheye coeffs) or RadTan."""
+    d = np.asarray(cam.dist, float).ravel() if cam.dist is not None else np.zeros(5)
+    K = cam.K
+    if d.size == 4:
+        return KannalaBrandtModel(K[0, 0], K[1, 1], K[0, 2], K[1, 2], *d[:4])
+    return radtan_from_cameragt(cam)
+
+
+def _init_model(cam, model_name, wh):
+    """Build the chosen camera model from the provided intrinsics for the fixed-intrinsic path.
+
+    If the chosen model is the file's native one (KB↔fisheye, RadTan↔Brown) the exact stored
+    parameters are used. Otherwise the *same physical lens* is converted into the chosen model:
+    a pixel grid is unprojected through the provided model and the chosen model fits its native
+    distortion to those identical ray↔pixel pairs (the "two models, one camera" identity), so a
+    DS / UCM / EUCM camera is held at intrinsics that represent the same lens as the reference.
+    """
+    name = canonical_name(model_name)
+    src = _source_model(cam)
+    if name == src.name:
+        return src
+    w, h = wh
+    uu, vv = np.meshgrid(np.linspace(0.04 * w, 0.96 * w, 48),
+                         np.linspace(0.04 * h, 0.96 * h, 48))
+    pix = np.column_stack([uu.ravel(), vv.ravel()])
+    rays, valid = src.unproject(pix)
+    rays, pix = np.asarray(rays, float), np.asarray(pix, float)
+    if valid is not None:
+        valid = np.asarray(valid).ravel().astype(bool)
+        rays, pix = rays[valid], pix[valid]
+    cls = model_class(name)
+    tgt = _seed_from_K(cls, cam.K)
+    # Refine the chosen model's full intrinsic vector to reproduce the source lens (minimize the
+    # reprojection of the source rays onto the source pixels). Bounded TRF keeps the sphere /
+    # polynomial shape parameters in their valid range (an unbounded LM lets DS slide to a
+    # non-physical xi and diverge). A wide-FOV lens is only approximated by a 1-2 parameter model
+    # — that irreducible residual is a model-expressiveness limit, surfaced by the caller.
+    lo, hi = _param_bounds(cls)
+
+    def _resid(p):
+        uv, ok = cls.from_params(p).project(rays)
+        r = uv - pix
+        if ok is not None:
+            r = r * np.asarray(ok, float).reshape(-1, 1)
+        return np.nan_to_num(r, nan=1e3).ravel()
+
+    try:
+        sol = least_squares(_resid, tgt.params.astype(float), bounds=(lo, hi),
+                            method="trf", x_scale="jac", max_nfev=300)
+        cand = cls.from_params(sol.x)
+        if np.isfinite(cand.params).all():
+            tgt = cand
+    except (np.linalg.LinAlgError, ValueError):
+        pass
+    return tgt
+
+
+def _param_bounds(cls):
+    """(lower, upper) bounds for a model's intrinsic vector, used when converting a provided
+    lens into the model. Focal / principal point are left free; the distortion-shape parameters
+    are held to their physically valid ranges so the bounded fit cannot diverge."""
+    rng = {"fx": (1.0, 1e5), "fy": (1.0, 1e5), "cx": (-1e4, 1e4), "cy": (-1e4, 1e4),
+           "alpha": (0.0, 1.0), "beta": (0.05, 20.0), "xi": (-1.0, 1.0)}
+    lo, hi = [], []
+    for n in cls.param_names:
+        a, b = rng.get(n, (-10.0, 10.0))            # radtan k/p terms: a generous symmetric band
+        lo.append(a); hi.append(b)
+    return lo, hi
 
 
 def _node(fs, name, default=None):
@@ -205,14 +279,24 @@ def _detect_obs(cfg: RigConfig, obj):
 
 def _reconstruct(cfg: RigConfig):
     """Reconstruct the fused multi-board object from raw detections, then map observations
-    onto it — MC-Calib's ``calibrate3DObjects`` (no pre-built object file needed)."""
+    onto it — MC-Calib's ``calibrate3DObjects`` (no pre-built object file needed).
+
+    When ``cam_params_path`` is given, boards are resected with each camera's **native model**
+    (built from the provided intrinsics) so a wide-FOV fisheye is reconstructed correctly — the
+    default Brown bootstrap cannot model it and corrupts the fused geometry."""
     from .reconstruct import reconstruct_from_images, reconstruct_from_keypoints
+    init_models = None
+    if cfg.cam_params_path and os.path.exists(cfg.cam_params_path):
+        cams = _load_cameras(cfg.cam_params_path)[0]
+        init_models = {c: _source_model(cams[c]) for c in range(cfg.number_camera)
+                       if c in cams and cams[c].K is not None}
     if cfg.keypoints_path:
-        obj, obs, img_size = reconstruct_from_keypoints(cfg.keypoints_path, cfg.boards)
+        obj, obs, img_size = reconstruct_from_keypoints(
+            cfg.keypoints_path, cfg.boards, init_models=init_models)
     elif cfg.root_path:
         cam_ids = list(range(cfg.number_camera))
         obj, obs, img_size = reconstruct_from_images(
-            cfg.root_path, cam_ids, cfg.boards, cam_prefix=cfg.cam_prefix)
+            cfg.root_path, cam_ids, cfg.boards, cam_prefix=cfg.cam_prefix, init_models=init_models)
     else:
         raise ValueError("config has neither keypoints_path nor root_path")
     return obj, obs, img_size
@@ -269,12 +353,21 @@ def calibrate_from_config(config_path: str, overrides: Optional[Dict] = None) ->
     spec = {c: cfg.camera_models[c] if c < len(cfg.camera_models) else cfg.camera_models[-1]
             for c in cam_ids}
 
-    init_cameras = None
-    if cfg.fix_intrinsic:
-        if not cfg.cam_params_path or not os.path.exists(cfg.cam_params_path):
-            raise FileNotFoundError("fix_intrinsic=1 needs cam_params_path with initial intrinsics")
+    # Initial intrinsics from cam_params_path (MC-Calib's intrinsic init). When intrinsics are
+    # fixed, every chosen model is built with the matching native distortion and held; when
+    # they are refined, the file still seeds each camera's focal / principal point (init_K) so
+    # a real strong-fisheye / mixed-resolution rig starts in the right basin and the BA refines.
+    init_cameras, init_K = None, None
+    if cfg.cam_params_path and os.path.exists(cfg.cam_params_path):
         cams = _load_cameras(cfg.cam_params_path)[0]
-        init_cameras = {c: radtan_from_cameragt(cams[c]) for c in cam_ids if c in cams}
+        init_K = {c: cams[c].K for c in cam_ids if c in cams}
+        # Build each camera's chosen model from the provided intrinsics and start the BA from
+        # it (native KB/RadTan exact, else same-lens conversion). ``fix_intrinsic`` then only
+        # decides whether the joint BA refines these or holds them — both start from the prior.
+        init_cameras = {c: _init_model(cams[c], spec[c], img_size[c])
+                        for c in cam_ids if c in cams}
+    elif cfg.fix_intrinsic:
+        raise FileNotFoundError("fix_intrinsic=1 needs cam_params_path with initial intrinsics")
 
     gt, mccalib = _gt_and_mccalib(cfg)
     scn = Scenario(name=os.path.basename(os.path.dirname(config_path)) or "rig", object=obj,
@@ -282,9 +375,10 @@ def calibrate_from_config(config_path: str, overrides: Optional[Dict] = None) ->
                    gt=gt, mccalib=mccalib, mccalib_rms={})
     image_root = cfg.root_path if (cfg.save_reprojection and cfg.root_path) else None
     res = calibrate_scenario(scn, spec, fix_intrinsics=cfg.fix_intrinsic,
-                             init_cameras=init_cameras, save_dir=cfg.save_path,
+                             init_cameras=init_cameras, init_K=init_K, save_dir=cfg.save_path,
                              camera_params_file_name=cfg.camera_params_file_name,
                              image_root=image_root, cam_prefix=cfg.cam_prefix,
-                             he_approach=cfg.he_approach)
+                             he_approach=cfg.he_approach,
+                             refine_structure=(cfg.number_board > 1))
     res["config"] = cfg
     return res

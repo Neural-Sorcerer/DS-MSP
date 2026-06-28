@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import glob
 import os
+import threading
 import warnings
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -33,6 +35,7 @@ import numpy as np
 from ..calib.charuco import (BoardSpec, _frame_id_from_name, board_object_points,
                              detect_image, make_detectors)
 from .object3d import build_objects
+from .pose_init import robust_pose_irls
 from .types import BoardObs, Object3D, ObjectObs
 
 _IMG_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
@@ -45,34 +48,78 @@ def _T_from_rt(rvec, tvec) -> np.ndarray:
     return T
 
 
+_TLS = threading.local()
+
+
+def _thread_detectors(specs, legacy, tuned):
+    """One detector set per worker thread, built once and reused across that thread's images
+    (CharucoDetector construction is non-trivial; per-image rebuilds would dominate)."""
+    d = getattr(_TLS, "dets", None)
+    if d is None or _TLS.key != (id(specs), legacy, tuned):
+        d = make_detectors(specs, legacy=legacy, tuned=tuned)
+        _TLS.dets, _TLS.key = d, (id(specs), legacy, tuned)
+    return d
+
+
+def _detect_one_image(root_path, c, path, specs, cam_prefix, legacy, min_corners, subpix, tuned):
+    """Detect every board in one image — the unit of work for image-level load balancing (the
+    big 2592px cameras have far more work than the 640px ones, so balancing per image, not per
+    camera, keeps every core busy)."""
+    gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        return c, None, []
+    dets = _thread_detectors(specs, legacy, tuned)
+    frame_id = _frame_id_from_name(path)
+    out = []
+    for board_id, corner_ids, pts in detect_image(dets, gray, min_corners=min_corners,
+                                                   subpix=subpix):
+        out.append(BoardObs(cam_id=c, frame_id=frame_id, board_id=board_id,
+                            corner_ids=corner_ids, pts_2d=pts))
+    return c, (gray.shape[1], gray.shape[0]), out
+
+
 def detect_board_obs_images(root_path: str, cam_ids: List[int], specs: List[BoardSpec], *,
                             cam_prefix: str = "Cam_", legacy: bool = True,
-                            min_corners: int = 6
+                            min_corners: int = 6, subpix: bool = False, tuned: bool = False,
+                            workers: Optional[int] = None
                             ) -> Tuple[List[BoardObs], Dict[int, Tuple[int, int]]]:
     """Detect per-board ChArUco corners over ``<root>/<cam_prefix><cam+1:03d>/`` — the raw,
     *object-free* detections needed to reconstruct the fused object. Returns
     ``(board_obs, img_size)`` with ``board_obs`` carrying ``corner_ids`` / ``pts_2d`` and a
-    not-yet-filled ``T_c_b`` (frame ids rebased to MC-Calib's 0-indexed convention)."""
-    detectors = make_detectors(specs, legacy=legacy)
-    all_obs: List[BoardObs] = []
-    img_size: Dict[int, Tuple[int, int]] = {}
+    not-yet-filled ``T_c_b`` (frame ids rebased to MC-Calib's 0-indexed convention).
+
+    Detection is **parallelised across cameras** (one thread per camera; OpenCV's detector
+    releases the GIL, so threads scale near-linearly with cores) — the dominant end-to-end
+    cost, cut ~3.5x on an 8-camera rig. ``subpix`` adds ``cv2.cornerSubPix`` refinement."""
+    if workers is None:
+        workers = (os.cpu_count() or 4)
+    # flat (camera, image) task list — image-level balancing keeps all cores busy despite the
+    # 2592px vs 640px size imbalance across cameras.
+    tasks = []
     for c in cam_ids:
         cam_dir = os.path.join(root_path, f"{cam_prefix}{c + 1:03d}")
         if not os.path.isdir(cam_dir):
             continue
-        files = sorted(f for f in glob.glob(os.path.join(cam_dir, "*"))
-                       if f.lower().endswith(_IMG_EXT))
-        for path in files:
-            gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            if gray is None:
-                continue
-            if c not in img_size:
-                img_size[c] = (gray.shape[1], gray.shape[0])
-            frame_id = _frame_id_from_name(path)
-            for board_id, corner_ids, pts in detect_image(detectors, gray,
-                                                           min_corners=min_corners):
-                all_obs.append(BoardObs(cam_id=c, frame_id=frame_id, board_id=board_id,
-                                        corner_ids=corner_ids, pts_2d=pts))
+        for path in sorted(f for f in glob.glob(os.path.join(cam_dir, "*"))
+                           if f.lower().endswith(_IMG_EXT)):
+            tasks.append((c, path))
+
+    def _do(t):
+        return _detect_one_image(root_path, t[0], t[1], specs, cam_prefix, legacy,
+                                 min_corners, subpix, tuned)
+
+    if workers and workers > 1 and len(tasks) > 1:
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            results = list(ex.map(_do, tasks))
+    else:
+        results = [_do(t) for t in tasks]
+
+    all_obs: List[BoardObs] = []
+    img_size: Dict[int, Tuple[int, int]] = {}
+    for c, wh, obs in results:
+        if wh is not None and c not in img_size:
+            img_size[c] = wh
+        all_obs.extend(obs)
     if all_obs:
         base = min(o.frame_id for o in all_obs)
         for o in all_obs:
@@ -153,22 +200,39 @@ def _bootstrap_K(board_obs: List[BoardObs], board_points: Dict[int, np.ndarray],
 
 def reconstruct_object(board_obs: List[BoardObs], specs: List[BoardSpec],
                        img_size: Dict[int, Tuple[int, int]], *,
-                       object_id: int = 0) -> Object3D:
-    """Resect every board (bootstrap intrinsics + PnP -> ``T_c_b``) and fuse the boards into
-    one rigid :class:`Object3D` (the largest covisibility component). Raw, object-free
-    ``board_obs`` in, fused object out — MC-Calib's ``calibrate3DObjects`` result."""
+                       object_id: int = 0, init_models: Optional[Dict[int, object]] = None
+                       ) -> Object3D:
+    """Resect every board (-> ``T_c_b``) and fuse the boards into one rigid :class:`Object3D`
+    (the largest covisibility component). Raw, object-free ``board_obs`` in, fused object out
+    — MC-Calib's ``calibrate3DObjects`` result.
+
+    ``init_models`` (``{cam_id: CameraModel}``, e.g. from ``cam_params_path``) resects each
+    board with that camera's **native model** via robust model-aware PnP. This is essential
+    for a wide-FOV fisheye: the default ``cv2.calibrateCamera`` bootstrap is a Brown/pinhole
+    fit that cannot represent a ~190° lens, so its per-board PnP — and therefore the fused
+    inter-board geometry — is corrupted. With the correct model the resection (and the whole
+    reconstructed object) is right. Cameras without an init model fall back to the bootstrap."""
     board_points = {b: board_object_points(specs[b]) for b in range(len(specs))}
-    Kd = _bootstrap_K(board_obs, board_points, img_size)
+    boot_cams = [o.cam_id for o in board_obs
+                 if not (init_models and o.cam_id in init_models)]
+    Kd = (_bootstrap_K([o for o in board_obs if o.cam_id in set(boot_cams)],
+                       board_points, img_size) if boot_cams else {})
     for o in board_obs:                            # resect each board by PnP
-        K, dist = Kd[o.cam_id]
         objp = board_points[o.board_id][o.corner_ids].astype(np.float64)
         if len(objp) < 4:
             o.valid = False
             continue
-        ok, rv, tv = cv2.solvePnP(objp, o.pts_2d.astype(np.float64), K, dist,
-                                  flags=cv2.SOLVEPNP_ITERATIVE)
-        o.T_c_b = _T_from_rt(rv, tv) if ok else None
-        o.valid = bool(ok)
+        if init_models and o.cam_id in init_models:        # model-aware (correct for fisheye)
+            T = robust_pose_irls(init_models[o.cam_id], objp, o.pts_2d.astype(np.float64),
+                                 kernel="cauchy", gnc_iters=5, gnc_start=4.0)
+            o.T_c_b = T
+            o.valid = T is not None
+        else:                                              # Brown bootstrap (pinhole rigs)
+            K, dist = Kd[o.cam_id]
+            ok, rv, tv = cv2.solvePnP(objp, o.pts_2d.astype(np.float64), K, dist,
+                                      flags=cv2.SOLVEPNP_ITERATIVE)
+            o.T_c_b = _T_from_rt(rv, tv) if ok else None
+            o.valid = bool(ok)
 
     valid = [o for o in board_obs if o.valid and o.T_c_b is not None]
     objects = build_objects(valid, board_points)
@@ -211,18 +275,23 @@ def object_obs_from_board_obs(board_obs: List[BoardObs], obj: Object3D, *,
 
 def reconstruct_from_images(root_path: str, cam_ids: List[int], specs: List[BoardSpec], *,
                             cam_prefix: str = "Cam_", legacy: bool = True,
-                            min_corners: int = 6
+                            min_corners: int = 6, init_models: Optional[Dict[int, object]] = None
                             ) -> Tuple[Object3D, List[ObjectObs], Dict[int, Tuple[int, int]]]:
-    """Raw image folder -> ``(fused object, object_obs, img_size)`` for a multi-board rig."""
+    """Raw image folder -> ``(fused object, object_obs, img_size)`` for a multi-board rig.
+    ``init_models`` resects boards with the native per-camera model (see
+    :func:`reconstruct_object`) — needed for a wide-FOV fisheye rig."""
     board_obs, img_size = detect_board_obs_images(
         root_path, cam_ids, specs, cam_prefix=cam_prefix, legacy=legacy, min_corners=min_corners)
-    obj = reconstruct_object(board_obs, specs, img_size)
+    obj = reconstruct_object(board_obs, specs, img_size, init_models=init_models)
     return obj, object_obs_from_board_obs(board_obs, obj), img_size
 
 
-def reconstruct_from_keypoints(keypoints_path: str, specs: List[BoardSpec]
+def reconstruct_from_keypoints(keypoints_path: str, specs: List[BoardSpec], *,
+                               init_models: Optional[Dict[int, object]] = None
                                ) -> Tuple[Object3D, List[ObjectObs], Dict[int, Tuple[int, int]]]:
-    """Pre-detected keypoints -> ``(fused object, object_obs, img_size)`` for a multi-board rig."""
+    """Pre-detected keypoints -> ``(fused object, object_obs, img_size)`` for a multi-board rig.
+    ``init_models`` resects boards with the native per-camera model (see
+    :func:`reconstruct_object`)."""
     board_obs, img_size = detect_board_obs_keypoints(keypoints_path)
-    obj = reconstruct_object(board_obs, specs, img_size)
+    obj = reconstruct_object(board_obs, specs, img_size, init_models=init_models)
     return obj, object_obs_from_board_obs(board_obs, obj), img_size

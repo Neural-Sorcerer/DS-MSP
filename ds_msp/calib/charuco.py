@@ -62,13 +62,35 @@ def _make_board(spec: BoardSpec, dictionary, id_offset: int, legacy: bool):
     return board
 
 
-def make_detectors(specs: List[BoardSpec], *, legacy: bool = True):
-    """One :class:`cv2.aruco.CharucoDetector` per board, with MC-Calib's id offsets."""
+_SUBPIX_CRITERIA = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.01)
+
+
+def make_detectors(specs: List[BoardSpec], *, legacy: bool = True, tuned: bool = False):
+    """One :class:`cv2.aruco.CharucoDetector` per board, with MC-Calib's id offsets.
+
+    ``tuned=True`` enables the detection tricks that *recover more corners* a basic detector
+    drops — ``tryRefineMarkers`` (re-find markers missed on the first pass via the board
+    layout), ``minMarkers=1`` (accept a ChArUco corner adjacent to a single decoded marker,
+    not two — the board-edge corners), and per-marker ``CORNER_REFINE_SUBPIX``. On the real
+    8-camera rig it lifts the corner count ~24% (e.g. the 640px fisheyes 87/558 → 397/971).
+
+    **It is OFF by default because, measured on that rig, the extra corners HURT accuracy**:
+    the recovered corners are the strongly-distorted wide-fisheye *edge* corners, which are
+    noisier — reprojection RMS rose 0.61→0.89 px. Turn it on only for a near-pinhole / mild-
+    distortion rig, or when corner coverage (not accuracy) is the binding constraint."""
     dictionary = cv2.aruco.getPredefinedDictionary(_DICT)
     detectors, offset = [], 0
     for spec in specs:
         board = _make_board(spec, dictionary, offset, legacy)
-        detectors.append(cv2.aruco.CharucoDetector(board))
+        if tuned:
+            cp = cv2.aruco.CharucoParameters()
+            cp.tryRefineMarkers = True
+            cp.minMarkers = 1
+            dp = cv2.aruco.DetectorParameters()
+            dp.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
+            detectors.append(cv2.aruco.CharucoDetector(board, cp, dp))
+        else:
+            detectors.append(cv2.aruco.CharucoDetector(board))
         offset += spec.n_markers
     return detectors
 
@@ -102,16 +124,24 @@ def _frame_id_from_name(path: str) -> int:
     return int(digits) if digits else 0
 
 
-def detect_image(detectors, gray: np.ndarray, *, min_corners: int = 4
+def detect_image(detectors, gray: np.ndarray, *, min_corners: int = 4, subpix: bool = False
                  ) -> List[Tuple[int, np.ndarray, np.ndarray]]:
     """Detect every board in one image. Returns ``[(board_id, corner_ids, pts_2d), ...]``
-    with ``corner_ids`` shape ``(m,)`` and ``pts_2d`` shape ``(m, 2)``."""
+    with ``corner_ids`` shape ``(m,)`` and ``pts_2d`` shape ``(m, 2)``.
+
+    ``subpix=True`` runs ``cv2.cornerSubPix`` on the interpolated ChArUco corners. OFF by
+    default: ``CharucoDetector`` already sub-pixel-interpolates, and a second pass measurably
+    *wandered* on this wide-fisheye rig (RMS 0.89→0.93 px) — the 5px window straddles
+    neighbouring corners under heavy distortion. Useful on mild-distortion images."""
     out = []
     for b, det in enumerate(detectors):
         ch_corners, ch_ids, _, _ = det.detectBoard(gray)
         if ch_ids is None or len(ch_ids) < min_corners:
             continue
-        out.append((b, ch_ids.ravel().astype(int), ch_corners.reshape(-1, 2).astype(float)))
+        c = ch_corners.reshape(-1, 2).astype(np.float32)
+        if subpix and len(c):
+            c = cv2.cornerSubPix(gray, c, (5, 5), (-1, -1), _SUBPIX_CRITERIA)
+        out.append((b, ch_ids.ravel().astype(int), c.astype(float)))
     return out
 
 
